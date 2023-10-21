@@ -1,0 +1,220 @@
+\RequirePackage[bookmarksnumbered,unicode]{hyperref}
+\documentclass[acmsmall, nonacm, screen]{acmart}
+\makeatletter
+\let\@authorsaddresses\@empty
+\makeatother
+
+\RequirePackage{xspace}
+\RequirePackage[outputdir=latex.out]{minted}
+\RequirePackage[scaled=0.8]{FiraMono}
+
+\newcommand{\editorial}[2]{{\color{#1}{#2}}\xspace}
+% \newcommand{\editorial}[2]{}
+\newcommand{\sgd}[1]{\editorial{cyan}{sgd: #1}}
+
+\title{Design Running Context for Byzantine Faulty Tolerance Replication}
+\begin{document}
+\maketitle
+
+\section{Meta-Concerns}
+
+This project does NOT optimize messaging performance.
+
+I'm not saying the messaging is slow.
+The Tokio runtime can handle more than 300K ingress \emph{and} egress traffic with single thread.
+This number should satisfy the use case for BFT benchmarking.
+
+The main reason of this concern is that NeoBFT, the paper of this artifact, is a work that focuses on improving BFT performance by reducing messaging overhead, which is actually based on the assumption that messaging \emph{is} the system bottleneck.
+
+For most if not all versions of the codebase prior to the current one, a thread pool is set up to accelerate cryptography.
+There was even a time the evaluation codebase implements network communication based on DPDK.
+The result was that because messaging was so efficient, every protocol's performance is close to the unreplicated baseline.
+The result did not only defeat the purpose of NeoBFT, but also make the comparison of previous works nonsense.
+
+In current version of this project, I use standard kernel network stack, and the cryptographic operations are performed on the same thread of protocol state machine.
+I replace the fast \texttt{secp256k1} cryptographic library crate with the slower but more community-friendly \texttt{k256} crate.
+In conclusion, we should not be afraid the system runs slowly.
+Instead, we should be afraid if it runs fast \emph{in a wrong way}.
+
+\section{Overview}
+
+The interfaces and architecture are inspired by \href{https://github.com/UWSysLab/specpaxos}{SpexPaxos} and \href{https://github.com/emichael/dslabs}{DSLabs}.
+The architecture generally follows a partial actor model.
+(Partial because there's no local address and local message passing.)
+Each receiver, either a replica or a client, is a set of stateful callbacks that handles various types of messages and timeouts.
+A single-threaded event loop is in charge of driving one or more receivers by calling the callbacks corresponding to the incoming events.
+The callbacks may update receivers' internal states and make effects, i.e., send messages and set timeouts.
+The context should also provide interfaces for making effects.
+
+This project follows the same principle, to fully decouple protocol logics (i.e. the callbacks) from runtime details.
+The protocol implementations are runtime-agnostic, makes them just work in multiple runtime implementations such as the ones for benchmark and testing.
+It also makes it possible to try out runtime designs rapidly without modifying protocols' code.
+
+The principle is further extended to \emph{let protocols only decide what has to be decided by them}.
+Because BFT involves cryptography, the BFT protocols in this project not only have code snippets for handling messages and timeouts, but also for signing and verifying messages.
+The cryptographic snippets are stateless, so they may be executed sequentially or concurrently to event handlers, or even be skipped at all, e.g., on client side.
+
+In SpecPaxos, the same \texttt{Transport} class does both things: calling callbacks to handle events and being called by callbacks to generate events.
+Clearly this results in the \texttt{Transport} instance and the receiver instances to hold mutable reference to each other, which is a typical antipattern in Rust.
+In this project the interface is divided into two parts: the part ``inside'' receiver instances that provides interfaces to generate events called \texttt{Context} (instead of \texttt{Transport} because it also sets/unsets timers), and the part ``outside'' receiver instances that run event loop and call receivers' callbacks called \texttt{Dispatch}.
+
+In SpecPaxos, client's invoking interface takes a continuation callback.
+This approach is good for scheduling-agnostic, i.e., it can be used in both blocking and asynchronous contexts, but if you want to close-loop invoking from the continuation, both the closure and event loop will hold mutable reference to the client at the same time.
+There's no good solution to this, so in this project clients do synchronization internally similar to DSLabs' clients (which do it through Java's \texttt{synchronized}), and provide invoking interface similar to SpecPaxos.
+You can clone a reference-counted client into the continuation closure if you want, but I would rather prefer a one-shot channel to flatten the code.
+
+The timer design is more similar to DSLabs, to avoid a mutable-capturing closure like we what discussed on client above.
+An untyped timer ID is used to save some type parameters.
+
+\section{Message Format}
+
+The first-class sum type in Rust makes a good choice for message representation.
+It just that for BFT we also need to take cryptography into account.
+
+One solution fails fast is to keep cryptography in runtime and transparent to protocols.
+Protocols often send nested messages, e.g., for all kinds of quorum certificates.
+So they have to be accessible to signatures and signed messages to store them and send later.
+
+There are mainly two choices to attach a signature into a message.
+One is to manually include a signature field in all message types
+
+\begin{minted}{rust}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct SomeMessage {
+    // other fields
+    signature: Signature,
+}
+\end{minted}
+
+\noindent which has the following problems:
+\begin{itemize}
+    \item More verbose message types.
+    \item The \texttt{Signature} type probably needs to have a default value, because when sending message, protocol probably cannot fill the \texttt{signature} inline.
+    Mainstream cryptography libraries do not provide signature default value, so I have to invent my own newtype for this.
+    \item The signer and verifier must know where to find the signature in the message, which results in a lot of explicit field-accessing or \texttt{impl AsMut<Signature>} boilerplates.
+\end{itemize}
+
+In this project a universal wrapper type is provided
+
+\begin{minted}{rust}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Signed<M> {
+    inner: M,
+    signature: Signature,
+}
+
+impl<M> Deref for Signed<M> {
+    type Target = M
+
+    // ...
+}
+\end{minted}
+
+\noindent which leads to two choices of compound message representation.
+The first one is \texttt{Signed(Message::X(X))}: plain messages as enum variants, and runtime works with wrapped compound messages; and the second one is \texttt{Message::X(Signed(X))}: wrapped messages as enum variants, and runtime works with plain compound messages.
+
+The first one is worse to use, because whenever a signed message is store, it must be stored in the polymorphic style, and inspect it requires awful variant assertion.
+The second one introduces a little difficulty for signer: signer only knows how to turn a \texttt{X} into a \texttt{Signed(X)}, but not a \texttt{Message::X(Signed(X))}.
+So some additional packing boilerplate are required.
+
+\section{Discontinuity of Stateful Operations}
+
+It's quite normal for a replication protocol to ``broadcast to everyone including self''.
+In a crash tolerance protocol, it is usually achieved by issuing a network broadcast to all the others, then ``pretend'' self is also receiving the message by calling the handler (which may be an internal version that bypass some safety checks) inline.
+
+The same thing cannot be easily done by BFT protocol, or at least without any sacrifice.
+The signing operation happens between handling current message and handling the broadcast message.
+If we do signing in the handler, we lose to chance to extract the stateless operation from the stateful ones.
+
+Actually, this reveals a critical difference between crash tolerance and BFT.
+It is (usually) ok to assume a crash tolerance protocol \emph{only looks at every message once}.
+However, if you only allow a BFT protocol to look at each message once, the suboptimal cases described above will happen.
+Sometimes it may not look at the message only twice, but three times: there are certain cases where a protocol wants to check the message even before it is being verified (with state, otherwise the checking can be done by verifier), and decide to drop the message or bypass the verification to reduce cryptography workload stress.
+
+This fact once led me into a multi-actor replica design, that the replica state is divided into multiple sub-states.
+The sub-states process the message as a pipeline, and cryptographic operations happen during the message passing between them.
+This design did not work because I realized that different pipeline stages need to share states.
+Actually, some states are shared by all stages, makes the multiple sub-states meaningless.
+
+There are some other design attempts that allow a replica to process one message for arbitrary many stages, some of them being stateful and the others being stateless.
+That is basically overengineering.
+
+In this project I choose to support ``loopback'' messages, which is sent as \texttt{X} and received as \texttt{Message::X(Signed(X))} later by sender itself.
+Notice that I am not making broadcast to by-default loop back, because there are also some cases where the loopback is not required, e.g., state transfer requests.
+
+\section{Out-of-line Message Delivery}
+
+In SpecPaxos one thread is used in total.
+That is the thread that calls \texttt{epoll} (through \texttt{libevent}), performs rx IO, calls receiver's callback, and performs tx IO.
+At full throughput kernel time is much longer than user-space time.
+
+That will not be true if I do the same in this project.
+It takes long to IO, but cryptography takes much longer.
+
+If the system does not rx at least at the frequency of packets arriving, hardware will start to queue.
+Eventually, the queue will be saturated, and we will start to lose packet.
+We cannot afford any packet loss in performance test.
+
+We may relay on the close loop setup to rescue us eventually, and just make sure there's sufficient queue size to tolerance to burst.
+In order to do this, we need to enlarge both the hardware and software queue size.
+(SpecPaxos indeed enlarges the buffer sizes so I guess it already encounters the problem.)
+This complicates the setup, and you still cannot get the guarantee that the packet will \emph{never} be dropped.
+I'm not saying hardware \emph{will} drop the packets even with a sufficient large buffer, it's just whenever unexpected things happen, rx packet dropping will always need to be suspected.
+
+(To some sense this is similar to certain use cases of BFT itself: not saying there will be faulty behavior, just if you don't have BFT, when bad things happen you can never rule out malicious participants.)
+
+There for sure are hardware counters that can indicate packet dropping, but dealing with hardware is always painful, and we should write software that can \emph{tolerance} hardware as much as possible.
+
+In this project, the rx packets are immediately relayed into an unbounded in-memory channel, with zero processing, not even deserialization (which introduces a tradeoff to copy messages one more time).
+Unbounded channel is not perfect for propagating back pressure, but we already have close loop setup, and propagating back pressure into a size-limited hardware ring buffer is not a good idea anyway.
+
+Using an explicit software queue instead of an implicit hardware one has extra benefits.
+We are able to monitor queue length in real time easily, giving protocols more information to decide how to batch.
+Batching is critical to BFT protocols, and it's difficult if not impossible to certain protocols, e.g., NeoBFT and Zyzzyva, to do batching right because of the lack of cross-replica coordination in the fast path.
+Without talking to other replicas, the only meaningful batching indicator would be local workload stress, which can be inferred from rx queue length.
+
+In this project the runtime context supports a \emph{pace-based} batching solution.
+Protocols can provide an extra callback, and \texttt{Dispatch} will call it once per pace.
+Every time after the callback is called, \texttt{Dispatch} will check the current queue length, and set the next pace as when the latest packet currently in the queue has been processed.
+Pace interval will be adaptive to workload.
+If packets are arriving faster than processing speed, queue length will increase and the following pace interval will be larger.
+Even if packets suddenly do not arrive anymore, the next pace will still happen when the queue is exhausted, and every following packet will cause a pace.
+\sgd{Try to show some formula.}
+
+Pace-based batching is being used to implement all BFT protocols, and it works great for most of them, especially NeoBFT, PBFT and MinBFT.
+
+One downside of out-of-line message delivery is that it requires two threads at minimum.
+There will be some scheduling overhead if you really need to run replica with single hardware thread.
+
+For simplicity, the rx thread also do tx for now.
+It does not cause any problem for now, and we can move tx away whenever it does.
+
+\section{Miscellaneous on Evaluation Setup}
+
+The project builds one single executable that does not accept any command line argument.
+Deployment is simple and robust: upload the executable, kill any existing process and start a new detached process.
+
+Rust has excellent command line argument parsing library, but we will always need to generate command line arguments by hand.
+Instead, I start an HTTP server on every executable, and send HTTP request with all options.
+Previously I used a raw TCP connection for this, but HTTP allows ad-hoc experiments with e.g. \texttt{curl}.
+Also, as long as the HTTP server crashes when anything goes wrong, it's handy to monitor whether the system is running well.
+
+Always do \verb|cpupower frequency-set -g performance| before evaluation.
+Not doing it may not slow things down, but \emph{fail} them.
+
+Always set network interface's hardware queue number to 1 on replica side, to eliminate out of ordering.
+This kills a lot of corner cases and reduce crashing.
+
+Always pin threads to hardware threads.
+This improves performance a lot, and to some extent reveals workload of different threads in \texttt{htop}.
+
+When evaluating IO-heavy protocols, it may become problem if IRQ happens to running on the same thread of replica.
+Manually setting IRQ affinity is possible, but an easier way is to isolate cores for replica threads.
+When evaluating on cloud platform, core isolation can be hard, so I use the following trick
+
+\begin{verbatim}
+sudo service irqbalance stop
+IRQBALANCE_BANNED_CPULIST=<cores in use> sudo -E irqbalance --oneshot
+\end{verbatim}
+
+\end{document}

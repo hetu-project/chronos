@@ -1,0 +1,32 @@
+[package]
+name = "neat"
+version = "0.1.0"
+edition = "2021"
+
+[workspace]
+members = [
+    ".", 
+    "crates/permissioned-blockchain",
+    "crates/kademlia",
+    "scripts/reload", 
+    "scripts/control-messages",
+    "scripts/control",
+    "scripts/relay",
+    "scripts/neo-aws",
+]
+
+[profile.release]
+# debug = true
+strip = true
+incremental = true
+
+[dependencies]
+bincode = "1.3.3"
+ed25519-dalek = { version = "2.0.0", features = ["serde", "digest", "batch"] }
+flume = "0.11.0"
+hmac = "0.12.1"
+k256 = { version = "0.13.1", features = ["serde", "pem"] }
+rand = "0.8.5"
+serde = { version = "1.0.188", features = ["derive"] }
+tokio = { version = "1.32.0", features = ["net", "rt", "sync", "time"] }
+tokio-util = "0.7.9"

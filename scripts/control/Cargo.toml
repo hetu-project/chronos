@@ -1,0 +1,14 @@
+[package]
+name = "control"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+aws = ["neo-aws"]
+
+[dependencies]
+control-messages = { version = "0.1.0", path = "../control-messages" }
+neo-aws = { version = "0.1.0", path = "../neo-aws", optional = true }
+reqwest = { version = "0.11.22", default-features = false, features = ["json"] }
+tokio = { version = "1.32.0", features = ["rt", "net", "time", "macros"] }
+tokio-util = "0.7.9"
