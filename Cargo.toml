@@ -5,10 +5,11 @@ edition = "2021"
 
 [workspace]
 members = [
-    ".", 
+    ".",
     "crates/permissioned-blockchain",
     "crates/kademlia",
-    "scripts/reload", 
+    "crates/accumulator",
+    "scripts/reload",
     "scripts/control-messages",
     "scripts/control",
     "scripts/relay",
