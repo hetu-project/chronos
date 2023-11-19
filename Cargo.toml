@@ -9,6 +9,7 @@ members = [
     "crates/permissioned-blockchain",
     "crates/kademlia",
     "crates/accumulator",
+    "crates/vlc",
     "scripts/reload",
     "scripts/control-messages",
     "scripts/control",
