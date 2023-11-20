@@ -87,13 +87,24 @@ struct Server {
 }
 
 impl Server {
-    /// Create a new node.
-    fn new(addr: &SocketAddr, config: &Configuration) -> Self {
+    /// Create a new server
+    fn new(config: &Configuration, addr: &SocketAddr) -> Self {
         let s = UdpSocket::bind(addr).unwrap();
         Self {
             config: config.clone(),
             addr: addr.clone(),
             socket: s,
+            state: HashSet::new(),
+            running: false,
+        }
+    }
+
+    /// Create a new server from existing socket (for testing)
+    fn from_socket(config: &Configuration, addr: &SocketAddr, socket: UdpSocket) -> Self {
+        Self {
+            config: config.clone(),
+            addr: addr.clone(),
+            socket: socket,
             state: HashSet::new(),
             running: false,
         }
@@ -157,18 +168,18 @@ mod tests {
 
     use super::*;
 
-    fn setup(n_server: usize) -> Configuration {
+    fn setup(n_server: usize) -> (Configuration, Vec<UdpSocket>) {
         let mut server_addrs = Vec::new();
-        for i in 0..n_server {
-            server_addrs.push(SocketAddr::new(
-                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
-                5000 + i as u16,
-            ));
+        let mut sockets = Vec::new();
+        for _ in 0..n_server {
+            let s = UdpSocket::bind("127.0.0.1:0").unwrap();
+            server_addrs.push(s.local_addr().unwrap());
+            sockets.push(s);
         }
         let config = Configuration {
             server_addrs: server_addrs,
         };
-        config
+        (config, sockets)
     }
 
     fn terminate(config: &Configuration) {
@@ -180,11 +191,12 @@ mod tests {
 
     #[test]
     fn single_server() {
-        let config = setup(1);
+        let (config, sockets) = setup(1);
         // Start server
         let c = config.clone();
         let handle = std::thread::spawn(move || {
-            let mut server = Server::new(&c.server_addrs[0], &c);
+            let mut server =
+                Server::from_socket(&c, &c.server_addrs[0], sockets[0].try_clone().unwrap());
             server.run();
             server.state
         });
@@ -200,13 +212,14 @@ mod tests {
 
     #[test]
     fn multi_servers() {
-        let config = setup(3);
+        let (config, sockets) = setup(3);
         // Start servers
         let mut handles = Vec::new();
         for i in 0..3 {
             let c = config.clone();
+            let s = sockets[i].try_clone().unwrap();
             handles.push(std::thread::spawn(move || {
-                let mut server = Server::new(&c.server_addrs[i], &c);
+                let mut server = Server::from_socket(&c, &c.server_addrs[i], s);
                 server.run();
                 server.state
             }));
