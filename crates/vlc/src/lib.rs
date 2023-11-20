@@ -10,28 +10,28 @@ const N_SLOTS: usize = 128;
 const MAX_DEPTH: usize = 128;
 
 #[derive(PartialEq, Debug)]
-enum ClockCompare {
+pub enum ClockCompare {
     Before,
     After,
     Equal,
     Concurrent,
 }
 
-#[derive(Clone, Debug)]
-struct Clock {
+#[derive(Clone)]
+pub struct Clock {
     value: [u128; N_SLOTS],
     depth: usize,
 }
 
 impl Clock {
-    fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             value: [0; N_SLOTS],
             depth: MAX_DEPTH,
         }
     }
 
-    fn inc(&mut self, index: usize) -> bool {
+    pub fn inc(&mut self, index: usize) -> bool {
         if self.depth > 0 {
             self.depth -= 1;
             self.value[index] |= 1 << self.depth;
@@ -41,14 +41,14 @@ impl Clock {
         }
     }
 
-    fn clear(&mut self) {
+    pub fn clear(&mut self) {
         self.depth = MAX_DEPTH;
         for i in 0..N_SLOTS {
             self.value[i] = 0;
         }
     }
 
-    fn compare(&self, other: &Clock) -> ClockCompare {
+    pub fn compare(&self, other: &Clock) -> ClockCompare {
         let mut comp = ClockCompare::Equal;
         for i in 0..N_SLOTS {
             if self.value[i] < other.value[i] {
@@ -68,7 +68,7 @@ impl Clock {
         return comp;
     }
 
-    fn merge(&mut self, other: &Clock) {
+    pub fn merge(&mut self, other: &Clock) {
         self.depth = cmp::min(self.depth, other.depth);
         for i in 0..N_SLOTS {
             self.value[i] = self.value[i] | other.value[i];
