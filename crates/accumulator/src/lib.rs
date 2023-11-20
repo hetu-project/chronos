@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
+use std::net::{SocketAddr, UdpSocket};
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Message {
@@ -29,7 +29,7 @@ struct ClientMessage {
     item: String,
 }
 
-/// the current node state, which is a set of strings.
+/// The current node state, which is a set of strings.
 #[derive(Serialize, Deserialize, Debug)]
 struct ServerMessage {
     state: HashSet<String>,
@@ -90,16 +90,10 @@ impl Server {
     /// Create a new server
     fn new(config: &Configuration, addr: &SocketAddr) -> Self {
         let s = UdpSocket::bind(addr).unwrap();
-        Self {
-            config: config.clone(),
-            addr: addr.clone(),
-            socket: s,
-            state: HashSet::new(),
-            running: false,
-        }
+        Self::from_socket(config, addr, s)
     }
 
-    /// Create a new server from existing socket (for testing)
+    /// Create a new server from existing socket
     fn from_socket(config: &Configuration, addr: &SocketAddr, socket: UdpSocket) -> Self {
         Self {
             config: config.clone(),
@@ -164,11 +158,12 @@ impl Server {
 #[cfg(test)]
 mod tests {
     use std::thread;
+    use std::thread::JoinHandle;
     use std::time;
 
     use super::*;
 
-    fn setup(n_server: usize) -> (Configuration, Vec<UdpSocket>) {
+    fn start_servers(n_server: usize) -> (Configuration, Vec<JoinHandle<HashSet<String>>>) {
         let mut config = Configuration {
             server_addrs: Vec::new(),
         };
@@ -178,7 +173,24 @@ mod tests {
             config.server_addrs.push(s.local_addr().unwrap());
             sockets.push(s);
         }
-        (config, sockets)
+        let mut handles = Vec::new();
+        for i in 0..n_server {
+            let c = config.clone();
+            let s = sockets[i].try_clone().unwrap();
+            handles.push(std::thread::spawn(move || {
+                let mut server = Server::from_socket(&c, &c.server_addrs[i], s);
+                server.run();
+                server.state
+            }));
+        }
+        (config, handles)
+    }
+
+    fn collect_states(handles: Vec<JoinHandle<HashSet<String>>>) -> Vec<HashSet<String>> {
+        handles
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect::<Vec<_>>()
     }
 
     fn terminate(config: &Configuration) {
@@ -190,49 +202,29 @@ mod tests {
 
     #[test]
     fn single_server() {
-        let (config, sockets) = setup(1);
         // Start server
-        let c = config.clone();
-        let handle = std::thread::spawn(move || {
-            let mut server =
-                Server::from_socket(&c, &c.server_addrs[0], sockets[0].try_clone().unwrap());
-            server.run();
-            server.state
-        });
+        let (config, handles) = start_servers(1);
         // Run client
         let mut client = Client::new(&config);
         client.disseminate("hello");
         // End test
         thread::sleep(time::Duration::from_millis(100));
         terminate(&config);
-        let state = handle.join().unwrap();
-        assert!(state.contains("hello"));
+        let states = collect_states(handles);
+        assert!(states[0].contains("hello"));
     }
 
     #[test]
     fn multi_servers() {
-        let (config, sockets) = setup(3);
         // Start servers
-        let mut handles = Vec::new();
-        for i in 0..3 {
-            let c = config.clone();
-            let s = sockets[i].try_clone().unwrap();
-            handles.push(std::thread::spawn(move || {
-                let mut server = Server::from_socket(&c, &c.server_addrs[i], s);
-                server.run();
-                server.state
-            }));
-        }
+        let (config, handles) = start_servers(3);
         // Run client
         let mut client = Client::new(&config);
         client.disseminate("hello");
         // End test
         thread::sleep(time::Duration::from_millis(100));
         terminate(&config);
-        let states = handles
-            .into_iter()
-            .map(|h| h.join().unwrap())
-            .collect::<Vec<_>>();
+        let states = collect_states(handles);
         assert!(states.iter().all(|s| s.contains("hello")));
     }
 }
