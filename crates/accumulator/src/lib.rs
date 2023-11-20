@@ -43,8 +43,8 @@ struct Client {
 
 impl Client {
     /// Create a new client
-    fn new(addr: &str, config: &Configuration) -> Self {
-        let s = UdpSocket::bind(addr).unwrap();
+    fn new(config: &Configuration) -> Self {
+        let s = UdpSocket::bind("0.0.0.0:0").unwrap();
         Self {
             socket: s,
             config: config.clone(),
@@ -154,31 +154,27 @@ mod tests {
 
     use super::*;
 
-    fn setup(n_server: usize, n_client: usize) -> (Configuration, Vec<String>) {
+    fn setup(n_server: usize) -> Configuration {
         let mut server_addrs = Vec::new();
-        let mut client_addrs = Vec::new();
         for i in 0..n_server {
             server_addrs.push(format!("127.0.0.1:{}", 5000 + i));
-        }
-        for i in 0..n_client {
-            client_addrs.push(format!("127.0.0.1:{}", 5000 + n_server + i));
         }
         let config = Configuration {
             server_addrs: server_addrs,
         };
-        (config, client_addrs)
+        config
     }
 
     fn terminate(config: &Configuration) {
-        let mut client = Client::new("127.0.0.1:8000", &config);
+        let mut client = Client::new(config);
         for addr in config.server_addrs.iter() {
-            client.terminate(&addr);
+            client.terminate(addr);
         }
     }
 
     #[test]
     fn single_server() {
-        let (config, client_addrs) = setup(1, 1);
+        let config = setup(1);
         // Start server
         let c = config.clone();
         let handle = std::thread::spawn(move || {
@@ -187,7 +183,7 @@ mod tests {
             server.state
         });
         // Run client
-        let mut client = Client::new(&client_addrs[0], &config);
+        let mut client = Client::new(&config);
         client.disseminate("hello");
         // End test
         thread::sleep(time::Duration::from_millis(100));
@@ -198,7 +194,7 @@ mod tests {
 
     #[test]
     fn multi_servers() {
-        let (config, client_addrs) = setup(3, 1);
+        let config = setup(3);
         // Start servers
         let mut handles = Vec::new();
         for i in 0..3 {
@@ -210,7 +206,7 @@ mod tests {
             }));
         }
         // Run client
-        let mut client = Client::new(&client_addrs[0], &config);
+        let mut client = Client::new(&config);
         client.disseminate("hello");
         // End test
         thread::sleep(time::Duration::from_millis(100));
