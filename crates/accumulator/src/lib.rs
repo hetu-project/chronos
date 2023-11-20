@@ -169,16 +169,15 @@ mod tests {
     use super::*;
 
     fn setup(n_server: usize) -> (Configuration, Vec<UdpSocket>) {
-        let mut server_addrs = Vec::new();
+        let mut config = Configuration {
+            server_addrs: Vec::new(),
+        };
         let mut sockets = Vec::new();
         for _ in 0..n_server {
             let s = UdpSocket::bind("127.0.0.1:0").unwrap();
-            server_addrs.push(s.local_addr().unwrap());
+            config.server_addrs.push(s.local_addr().unwrap());
             sockets.push(s);
         }
-        let config = Configuration {
-            server_addrs: server_addrs,
-        };
         (config, sockets)
     }
 
