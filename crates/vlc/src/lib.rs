@@ -4,9 +4,10 @@
 //! can be used in a peer-to-peer network to order events. Any node in the
 //! network can verify the correctness of the clock.
 
+use serde::{Deserialize, Serialize};
 use std::cmp;
 
-const N_SLOTS: usize = 128;
+const N_SLOTS: usize = 32; // Currently, serde only supports array serialization up to 32 elements
 const MAX_DEPTH: usize = 128;
 
 #[derive(PartialEq, Debug)]
@@ -17,7 +18,7 @@ pub enum ClockCompare {
     Concurrent,
 }
 
-#[derive(Clone)]
+#[derive(Serialize, Deserialize, Clone)]
 pub struct Clock {
     value: [u128; N_SLOTS],
     depth: usize,

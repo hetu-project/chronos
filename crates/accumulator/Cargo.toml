@@ -7,5 +7,6 @@ edition = "2021"
 
 [dependencies]
 neat = { version = "0.1.0", path = "../.." }
-serde = { version = "1.0.192", features = ["derive"] }
-serde_json = "1.0.108"
+vlc = { version = "0.1.0", path = "../vlc" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
