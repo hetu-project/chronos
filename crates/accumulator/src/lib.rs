@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
-use std::net::UdpSocket;
+use std::net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket};
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Message {
@@ -19,7 +19,7 @@ enum Message {
 /// Network configuration. Contains a list of server addresses.
 #[derive(Debug, Clone)]
 struct Configuration {
-    server_addrs: Vec<String>,
+    server_addrs: Vec<SocketAddr>,
 }
 
 /// Client message type for the accumulator application. Each message contains
@@ -59,16 +59,19 @@ impl Client {
         self.socket
             .send_to(
                 serde_json::to_string(&msg).unwrap().as_bytes(),
-                &self.config.server_addrs[0],
+                self.config.server_addrs[0],
             )
             .unwrap();
     }
 
     /// Terminate a running accumulator server.
-    fn terminate(&mut self, addr: &str) {
+    fn terminate(&mut self, index: usize) {
         let msg = Message::Terminate;
         self.socket
-            .send_to(serde_json::to_string(&msg).unwrap().as_bytes(), addr)
+            .send_to(
+                serde_json::to_string(&msg).unwrap().as_bytes(),
+                self.config.server_addrs[index],
+            )
             .unwrap();
     }
 }
@@ -77,7 +80,7 @@ impl Client {
 /// strings as its internal state.
 struct Server {
     config: Configuration,
-    addr: String,
+    addr: SocketAddr,
     socket: UdpSocket,
     state: HashSet<String>,
     running: bool,
@@ -85,11 +88,11 @@ struct Server {
 
 impl Server {
     /// Create a new node.
-    fn new(addr: &str, config: &Configuration) -> Self {
+    fn new(addr: &SocketAddr, config: &Configuration) -> Self {
         let s = UdpSocket::bind(addr).unwrap();
         Self {
             config: config.clone(),
-            addr: String::from(addr),
+            addr: addr.clone(),
             socket: s,
             state: HashSet::new(),
             running: false,
@@ -157,7 +160,10 @@ mod tests {
     fn setup(n_server: usize) -> Configuration {
         let mut server_addrs = Vec::new();
         for i in 0..n_server {
-            server_addrs.push(format!("127.0.0.1:{}", 5000 + i));
+            server_addrs.push(SocketAddr::new(
+                IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)),
+                5000 + i as u16,
+            ));
         }
         let config = Configuration {
             server_addrs: server_addrs,
@@ -167,8 +173,8 @@ mod tests {
 
     fn terminate(config: &Configuration) {
         let mut client = Client::new(config);
-        for addr in config.server_addrs.iter() {
-            client.terminate(addr);
+        for i in 0..config.server_addrs.len() {
+            client.terminate(i);
         }
     }
 
