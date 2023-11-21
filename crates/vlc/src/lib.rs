@@ -1,13 +1,13 @@
 //! Verifiable logical clock.
 //!
-//! This crates implements a verifiable logical clock construct. The clock
+//! This crate implements a verifiable logical clock construct. The clock
 //! can be used in a peer-to-peer network to order events. Any node in the
 //! network can verify the correctness of the clock.
 
 use serde::{Deserialize, Serialize};
 use std::cmp;
 
-const N_SLOTS: usize = 32; // Currently, serde only supports array serialization up to 32 elements
+const N_SLOTS: usize = 32; // Currently, serde only supports array serialization up to 32 elements. TODO: Fix this after serde addresses the issue.
 const MAX_DEPTH: usize = 128;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
@@ -39,6 +39,7 @@ impl PartialOrd for Clock {
 }
 
 impl Clock {
+    /// Create a new clock.
     pub fn new() -> Self {
         Self {
             value: [0; N_SLOTS],
@@ -46,6 +47,8 @@ impl Clock {
         }
     }
 
+    /// Increment the clock at the given index. Returns false if the clock
+    /// is saturated.
     pub fn inc(&mut self, index: usize) -> bool {
         if self.depth > 0 {
             self.depth -= 1;
@@ -56,6 +59,7 @@ impl Clock {
         }
     }
 
+    /// Reset the clock.
     pub fn clear(&mut self) {
         self.depth = MAX_DEPTH;
         for i in 0..N_SLOTS {
@@ -63,6 +67,7 @@ impl Clock {
         }
     }
 
+    /// Merge the clock with another clock.
     pub fn merge(&mut self, other: &Clock) {
         self.depth = cmp::min(self.depth, other.depth);
         for i in 0..N_SLOTS {
