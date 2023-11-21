@@ -10,18 +10,32 @@ use std::cmp;
 const N_SLOTS: usize = 32; // Currently, serde only supports array serialization up to 32 elements
 const MAX_DEPTH: usize = 128;
 
-#[derive(PartialEq, Debug)]
-pub enum ClockCompare {
-    Before,
-    After,
-    Equal,
-    Concurrent,
-}
-
-#[derive(Serialize, Deserialize, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Clock {
     value: [u128; N_SLOTS],
     depth: usize,
+}
+
+impl PartialOrd for Clock {
+    fn partial_cmp(&self, other: &Clock) -> Option<cmp::Ordering> {
+        let mut ord = cmp::Ordering::Equal;
+        for i in 0..N_SLOTS {
+            if self.value[i] < other.value[i] {
+                if ord == cmp::Ordering::Equal {
+                    ord = cmp::Ordering::Less;
+                } else if ord == cmp::Ordering::Greater {
+                    return None;
+                }
+            } else if self.value[i] > other.value[i] {
+                if ord == cmp::Ordering::Equal {
+                    ord = cmp::Ordering::Greater;
+                } else if ord == cmp::Ordering::Less {
+                    return None;
+                }
+            }
+        }
+        Some(ord)
+    }
 }
 
 impl Clock {
@@ -47,26 +61,6 @@ impl Clock {
         for i in 0..N_SLOTS {
             self.value[i] = 0;
         }
-    }
-
-    pub fn compare(&self, other: &Clock) -> ClockCompare {
-        let mut comp = ClockCompare::Equal;
-        for i in 0..N_SLOTS {
-            if self.value[i] < other.value[i] {
-                if comp == ClockCompare::Equal {
-                    comp = ClockCompare::Before;
-                } else if comp == ClockCompare::After {
-                    return ClockCompare::Concurrent;
-                }
-            } else if self.value[i] > other.value[i] {
-                if comp == ClockCompare::Equal {
-                    comp = ClockCompare::After;
-                } else if comp == ClockCompare::Before {
-                    return ClockCompare::Concurrent;
-                }
-            }
-        }
-        return comp;
     }
 
     pub fn merge(&mut self, other: &Clock) {
@@ -97,15 +91,13 @@ mod tests {
 
         assert!(c1.inc(0));
         assert!(c2.inc(0));
-        assert_eq!(c1.compare(&c2), ClockCompare::Equal);
+        assert_eq!(c1, c2);
 
         assert!(c1.inc(1));
-        assert_eq!(c1.compare(&c2), ClockCompare::After);
-        assert_eq!(c2.compare(&c1), ClockCompare::Before);
+        assert!(c1 > c2);
 
         assert!(c2.inc(2));
-        assert_eq!(c1.compare(&c2), ClockCompare::Concurrent);
-        assert_eq!(c2.compare(&c1), ClockCompare::Concurrent);
+        assert_eq!(c1.partial_cmp(&c2), None);
     }
 
     #[test]
@@ -117,11 +109,11 @@ mod tests {
         assert!(c1.inc(1));
         assert!(c2.inc(2));
         assert!(c2.inc(3));
-        assert_eq!(c1.compare(&c2), ClockCompare::Concurrent);
+        assert_eq!(c1.partial_cmp(&c2), None);
 
         let mut c3 = c1.clone();
         c3.merge(&c2);
-        assert_eq!(c3.compare(&c1), ClockCompare::After);
-        assert_eq!(c3.compare(&c2), ClockCompare::After);
+        assert!(c3 > c1);
+        assert!(c3 > c2);
     }
 }
