@@ -7,6 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::io::BufRead;
 use std::net::{SocketAddr, UdpSocket};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -18,8 +19,24 @@ enum Message {
 
 /// Network configuration. Contains a list of server addresses.
 #[derive(Debug, Clone)]
-struct Configuration {
+pub struct Configuration {
     server_addrs: Vec<SocketAddr>,
+}
+
+impl Configuration {
+    /// Create configuration from a file.
+    pub fn from_file(path: &str) -> Self {
+        let mut config = Configuration {
+            server_addrs: Vec::new(),
+        };
+        let file = std::fs::File::open(path).unwrap();
+        let reader = std::io::BufReader::new(file);
+        for line in reader.lines() {
+            let addr = line.unwrap().parse().unwrap();
+            config.server_addrs.push(addr);
+        }
+        config
+    }
 }
 
 /// Client message type for the accumulator application. Each message contains
@@ -36,14 +53,14 @@ struct ServerMessage {
 }
 
 /// A client node for the accumulator application.
-struct Client {
+pub struct Client {
     socket: UdpSocket,
     config: Configuration,
 }
 
 impl Client {
     /// Create a new client
-    fn new(config: &Configuration) -> Self {
+    pub fn new(config: &Configuration) -> Self {
         let s = UdpSocket::bind("0.0.0.0:0").unwrap();
         Self {
             socket: s,
@@ -52,7 +69,7 @@ impl Client {
     }
 
     /// Disseminate a string to the accumulator network.
-    fn disseminate(&mut self, item: &str) {
+    pub fn disseminate(&mut self, item: &str) {
         let msg = Message::FromClient(ClientMessage {
             item: String::from(item),
         });
@@ -65,7 +82,7 @@ impl Client {
     }
 
     /// Terminate a running accumulator server.
-    fn terminate(&mut self, index: usize) {
+    pub fn terminate(&mut self, index: usize) {
         let msg = Message::Terminate;
         self.socket
             .send_to(
@@ -78,9 +95,9 @@ impl Client {
 
 /// An accumulator server node. Each node maintains a UDP socket, and a set of
 /// strings as its internal state.
-struct Server {
+pub struct Server {
     config: Configuration,
-    addr: SocketAddr,
+    index: usize,
     socket: UdpSocket,
     state: HashSet<String>,
     running: bool,
@@ -88,17 +105,17 @@ struct Server {
 
 impl Server {
     /// Create a new server
-    fn new(config: &Configuration, addr: &SocketAddr) -> Self {
-        let s = UdpSocket::bind(addr).unwrap();
-        Self::from_socket(config, addr, s)
+    pub fn new(config: &Configuration, index: usize) -> Self {
+        let s = UdpSocket::bind(config.server_addrs[index]).unwrap();
+        Self::from_socket(config, index, s)
     }
 
     /// Create a new server from existing socket
-    fn from_socket(config: &Configuration, addr: &SocketAddr, socket: UdpSocket) -> Self {
+    fn from_socket(config: &Configuration, index: usize, socket: UdpSocket) -> Self {
         Self {
             config: config.clone(),
-            addr: addr.clone(),
-            socket: socket,
+            index,
+            socket,
             state: HashSet::new(),
             running: false,
         }
@@ -134,17 +151,20 @@ impl Server {
 
     /// Broadcast message to all other nodes in the network.
     fn broadcast(&mut self, msg: Message) {
-        for addr in &self.config.server_addrs {
-            if self.addr.ne(addr) {
+        for i in 0..self.config.server_addrs.len() {
+            if self.index != i {
                 self.socket
-                    .send_to(serde_json::to_string(&msg).unwrap().as_bytes(), addr)
+                    .send_to(
+                        serde_json::to_string(&msg).unwrap().as_bytes(),
+                        self.config.server_addrs[i],
+                    )
                     .unwrap();
             }
         }
     }
 
     /// Main event loop.
-    fn run(&mut self) {
+    pub fn run(&mut self) {
         self.running = true;
         while self.running {
             let mut buf = [0; 1500];
@@ -178,7 +198,7 @@ mod tests {
             let c = config.clone();
             let s = sockets[i].try_clone().unwrap();
             handles.push(std::thread::spawn(move || {
-                let mut server = Server::from_socket(&c, &c.server_addrs[i], s);
+                let mut server = Server::from_socket(&c, i, s);
                 server.run();
                 server.state
             }));
