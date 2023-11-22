@@ -6,9 +6,12 @@
 //! the same state, by merging received states into their own states.
 
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::cmp;
+use std::collections::BTreeSet;
+use std::hash::{Hash, Hasher};
 use std::io::BufRead;
 use std::net::{SocketAddr, UdpSocket};
+use vlc::Clock;
 
 #[derive(Serialize, Deserialize, Debug)]
 enum Message {
@@ -49,7 +52,7 @@ struct ClientMessage {
 /// The current node state, which is a set of strings.
 #[derive(Serialize, Deserialize, Debug)]
 struct ServerMessage {
-    state: HashSet<String>,
+    state: ServerState,
 }
 
 /// A client node for the accumulator application.
@@ -93,13 +96,67 @@ impl Client {
     }
 }
 
+/// State of a server node.
+#[derive(Serialize, Deserialize, Debug, Clone)]
+struct ServerState {
+    clock: Clock,
+    items: BTreeSet<String>,
+}
+
+impl ServerState {
+    /// Create a new server state.
+    fn new() -> Self {
+        Self {
+            clock: Clock::new(),
+            items: BTreeSet::new(),
+        }
+    }
+
+    fn hash(&self) -> u64 {
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        self.items.hash(&mut hasher);
+        hasher.finish()
+    }
+
+    /// Add items into the state. Returns true if resulting in a new state.
+    fn add(&mut self, items: BTreeSet<String>) -> bool {
+        if items.is_subset(&self.items) {
+            false
+        } else {
+            self.items.extend(items);
+            self.clock.inc(self.hash() as usize)
+        }
+    }
+
+    /// Merge another ServerState into the current state. Returns true if
+    /// resulting in a new state (different from current and received
+    /// state).
+    fn merge(&mut self, other: &Self) -> bool {
+        match self.clock.partial_cmp(&other.clock) {
+            Some(cmp::Ordering::Equal) => false,
+            Some(cmp::Ordering::Greater) => false,
+            Some(cmp::Ordering::Less) => {
+                self.clock = other.clock.clone();
+                self.items = other.items.clone();
+                false
+            }
+            None => {
+                // TODO: the two states have no causality, but result in the
+                // same items.
+                self.clock.merge(&other.clock);
+                self.add(other.items.clone())
+            }
+        }
+    }
+}
+
 /// An accumulator server node. Each node maintains a UDP socket, and a set of
 /// strings as its internal state.
 pub struct Server {
     config: Configuration,
     index: usize,
     socket: UdpSocket,
-    state: HashSet<String>,
+    state: ServerState,
     running: bool,
 }
 
@@ -116,7 +173,7 @@ impl Server {
             config: config.clone(),
             index,
             socket,
-            state: HashSet::new(),
+            state: ServerState::new(),
             running: false,
         }
     }
@@ -125,11 +182,14 @@ impl Server {
     fn handle_msg(&mut self, msg: Message) {
         match msg {
             Message::FromClient(msg) => {
-                let s = HashSet::from_iter(vec![msg.item]);
-                self.merge(s);
+                if self.state.add(BTreeSet::from_iter(vec![msg.item])) {
+                    self.broadcast_state();
+                }
             }
             Message::FromServer(msg) => {
-                self.merge(msg.state);
+                if self.state.merge(&msg.state) {
+                    self.broadcast_state();
+                }
             }
             Message::Terminate => {
                 self.running = false;
@@ -137,20 +197,11 @@ impl Server {
         }
     }
 
-    /// Merge a state into the current state. If the state changes, broadcast
-    /// the new state.
-    fn merge(&mut self, state: HashSet<String>) {
-        let old_size = self.state.len();
-        self.state.extend(state);
-        if self.state.len() > old_size {
-            self.broadcast(Message::FromServer(ServerMessage {
-                state: self.state.clone(),
-            }));
-        }
-    }
-
-    /// Broadcast message to all other nodes in the network.
-    fn broadcast(&mut self, msg: Message) {
+    /// Broadcast current state to all other nodes in the network.
+    fn broadcast_state(&mut self) {
+        let msg = Message::FromServer(ServerMessage {
+            state: self.state.clone(),
+        });
         for i in 0..self.config.server_addrs.len() {
             if self.index != i {
                 self.socket
@@ -183,7 +234,7 @@ mod tests {
 
     use super::*;
 
-    fn start_servers(n_server: usize) -> (Configuration, Vec<JoinHandle<HashSet<String>>>) {
+    fn start_servers(n_server: usize) -> (Configuration, Vec<JoinHandle<BTreeSet<String>>>) {
         let mut config = Configuration {
             server_addrs: Vec::new(),
         };
@@ -200,13 +251,13 @@ mod tests {
             handles.push(std::thread::spawn(move || {
                 let mut server = Server::from_socket(&c, i, s);
                 server.run();
-                server.state
+                server.state.items
             }));
         }
         (config, handles)
     }
 
-    fn collect_states(handles: Vec<JoinHandle<HashSet<String>>>) -> Vec<HashSet<String>> {
+    fn collect_states(handles: Vec<JoinHandle<BTreeSet<String>>>) -> Vec<BTreeSet<String>> {
         handles
             .into_iter()
             .map(|h| h.join().unwrap())
@@ -241,10 +292,13 @@ mod tests {
         // Run client
         let mut client = Client::new(&config);
         client.disseminate("hello");
+        client.disseminate("world");
         // End test
         thread::sleep(time::Duration::from_millis(100));
         terminate(&config);
         let states = collect_states(handles);
         assert!(states.iter().all(|s| s.contains("hello")));
+        assert!(states.iter().all(|s| s.contains("world")));
+        assert!(states.iter().all(|s| s.len() == 2));
     }
 }
