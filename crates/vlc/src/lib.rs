@@ -52,7 +52,7 @@ impl Clock {
     pub fn inc(&mut self, index: usize) -> bool {
         if self.depth > 0 {
             self.depth -= 1;
-            self.value[index] |= 1 << self.depth;
+            self.value[index % N_SLOTS] |= 1 << self.depth;
             true
         } else {
             false
