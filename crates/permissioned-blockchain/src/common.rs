@@ -1,10 +1,6 @@
 use std::{collections::HashMap, time::Duration};
 
 use k256::sha2::Digest;
-use nix::{
-    sched::{sched_setaffinity, CpuSet},
-    unistd::Pid,
-};
 use serde::{Deserialize, Serialize};
 
 use crate::context::{crypto::Hasher, Context, TimerId};
@@ -35,11 +31,13 @@ impl Timer {
     }
 }
 
+/*
 pub fn set_affinity(index: usize) {
     let mut cpu_set = CpuSet::new();
     cpu_set.set(index).unwrap();
     sched_setaffinity(Pid::from_raw(0), &cpu_set).unwrap()
 }
+*/
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Request {

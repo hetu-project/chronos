@@ -13,7 +13,6 @@ use control_messages::{BenchmarkStats, Role, Task};
 use permissioned_blockchain::{
     app::{ycsb, Workload},
     client::{run_benchmark, RunBenchmarkConfig},
-    common::set_affinity,
     context::{
         crypto::{Signer, Verifier},
         ordered_multicast::Variant,
@@ -119,7 +118,7 @@ async fn set_task(State(state): State<Arc<Mutex<AppState>>>, Json(task): Json<Ta
 
                     let handle = dispatch.handle();
                     std::thread::spawn(move || {
-                        set_affinity(0);
+                        //set_affinity(0);
                         runtime.block_on(async move {
                             cancel.cancelled().await;
                             handle.stop_async().await
@@ -127,7 +126,7 @@ async fn set_task(State(state): State<Arc<Mutex<AppState>>>, Json(task): Json<Ta
                         runtime.shutdown_background()
                     });
 
-                    set_affinity(1);
+                    //set_affinity(1);
                     let addr = replication_config.replica_addrs[replica.index as usize];
                     let signer = Signer::new_standard(
                         permissioned_blockchain::context::crypto::hardcoded_ed25519(replica.index),

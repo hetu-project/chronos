@@ -11,7 +11,6 @@ use tokio_util::sync::CancellationToken;
 
 use crate::{
     app::Workload,
-    common::set_affinity,
     context::{
         crypto::{Signer, Verifier, Verify},
         ordered_multicast::Variant,
@@ -228,7 +227,7 @@ where
 
                 let cancel = CancellationToken::new();
                 let runtime_thread = std::thread::spawn({
-                    set_affinity(group_index * 2);
+                    //set_affinity(group_index * 2);
                     let cancel = cancel.clone();
                     move || runtime.block_on(cancel.cancelled())
                 });
@@ -236,13 +235,13 @@ where
                 let dispatch_handle = dispatch.handle();
                 let run = benchmark.run_dispatch();
                 let dispatch_thread = std::thread::spawn(move || {
-                    set_affinity(group_index * 2 + 1);
+                    //set_affinity(group_index * 2 + 1);
                     run(&mut dispatch);
                     cancel.cancel()
                 });
 
                 let benchmark_thread = std::thread::spawn(move || {
-                    set_affinity(group_index * 2 + 1);
+                    //set_affinity(group_index * 2 + 1);
                     if group_index == 0 {
                         benchmark.close_loop(Duration::from_secs(1), &workload, handle.clone());
                     }

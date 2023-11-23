@@ -6,7 +6,7 @@ use std::{
     thread::{available_parallelism, spawn},
 };
 
-use permissioned_blockchain::{common::set_affinity, context::ordered_multicast::Sequencer};
+use permissioned_blockchain::context::ordered_multicast::Sequencer;
 
 fn main() {
     // let ip = args().nth(1).unwrap().parse::<Ipv4Addr>().unwrap();
@@ -24,7 +24,7 @@ fn main() {
 
     // this has to go first or compiler cannot guess `messages` type
     let mut run = || {
-        set_affinity(0);
+        //set_affinity(0);
         let mut buf = vec![0; 65536];
         loop {
             let (len, _) = socket.recv_from(&mut buf).unwrap();
@@ -33,13 +33,13 @@ fn main() {
         }
     };
 
-    for ((index, messages), socket) in repeat(messages.1)
+    for ((_, messages), socket) in repeat(messages.1)
         .take(usize::from(available_parallelism().unwrap()) - 1)
         .enumerate()
         .zip(repeat(socket.clone()))
     {
         spawn(move || {
-            set_affinity(index + 1);
+            //set_affinity(index + 1);
             loop {
                 let process = messages.recv().unwrap();
                 process.apply(|buf| {
