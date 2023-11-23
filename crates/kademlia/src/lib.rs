@@ -8,10 +8,7 @@ use std::{
 
 use derive_more::From;
 use neat::{
-    context::{
-        crypto::{Signed, VerifyingKey},
-        Addr, Receivers, TimerId, To,
-    },
+    context::{crypto::Signed, Addr, Receivers, TimerId, To},
     Context,
 };
 use primitive_types::U256;
@@ -68,8 +65,8 @@ pub struct QueryStatus {
 #[derive(Debug)]
 pub struct State {
     context: Context<Message>,
-    id: PeerId,
-    verifying_key: VerifyingKey,
+    //id: PeerId,
+    //verifying_key: VerifyingKey,
     num_parallel: usize,
 
     store: Store,
