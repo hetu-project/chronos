@@ -8,9 +8,10 @@ struct Cli {
     message: String,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Cli::parse();
     let config = Configuration::from_file(&args.config_path);
-    let mut client = accumulator::Client::new(&config);
-    client.disseminate(&args.message);
+    let mut client = accumulator::Client::new(&config).await;
+    client.disseminate(&args.message).await;
 }

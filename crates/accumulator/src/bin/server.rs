@@ -8,9 +8,10 @@ struct Cli {
     index: usize,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Cli::parse();
     let config = Configuration::from_file(&args.config_path);
-    let mut server = accumulator::Server::new(&config, args.index);
-    server.run();
+    let mut server = accumulator::Server::new(&config, args.index).await;
+    server.run().await;
 }

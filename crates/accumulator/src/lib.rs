@@ -10,7 +10,8 @@ use std::cmp;
 use std::collections::BTreeSet;
 use std::hash::{Hash, Hasher};
 use std::io::BufRead;
-use std::net::{SocketAddr, UdpSocket};
+use std::net::SocketAddr;
+use tokio::net::UdpSocket;
 use vlc::Clock;
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -63,8 +64,8 @@ pub struct Client {
 
 impl Client {
     /// Create a new client
-    pub fn new(config: &Configuration) -> Self {
-        let s = UdpSocket::bind("0.0.0.0:0").unwrap();
+    pub async fn new(config: &Configuration) -> Self {
+        let s = UdpSocket::bind("0.0.0.0:0").await.unwrap();
         Self {
             socket: s,
             config: config.clone(),
@@ -72,7 +73,7 @@ impl Client {
     }
 
     /// Disseminate a string to the accumulator network.
-    pub fn disseminate(&mut self, item: &str) {
+    pub async fn disseminate(&mut self, item: &str) {
         let msg = Message::FromClient(ClientMessage {
             item: String::from(item),
         });
@@ -81,17 +82,19 @@ impl Client {
                 serde_json::to_string(&msg).unwrap().as_bytes(),
                 self.config.server_addrs[0],
             )
+            .await
             .unwrap();
     }
 
     /// Terminate a running accumulator server.
-    pub fn terminate(&mut self, index: usize) {
+    pub async fn terminate(&mut self, index: usize) {
         let msg = Message::Terminate;
         self.socket
             .send_to(
                 serde_json::to_string(&msg).unwrap().as_bytes(),
                 self.config.server_addrs[index],
             )
+            .await
             .unwrap();
     }
 }
@@ -162,33 +165,28 @@ pub struct Server {
 
 impl Server {
     /// Create a new server
-    pub fn new(config: &Configuration, index: usize) -> Self {
-        let s = UdpSocket::bind(config.server_addrs[index]).unwrap();
-        Self::from_socket(config, index, s)
-    }
-
-    /// Create a new server from existing socket
-    fn from_socket(config: &Configuration, index: usize, socket: UdpSocket) -> Self {
+    pub async fn new(config: &Configuration, index: usize) -> Self {
+        let s = UdpSocket::bind(config.server_addrs[index]).await.unwrap();
         Self {
             config: config.clone(),
             index,
-            socket,
+            socket: s,
             state: ServerState::new(),
             running: false,
         }
     }
 
     /// Handle a message
-    fn handle_msg(&mut self, msg: Message) {
+    async fn handle_msg(&mut self, msg: Message) {
         match msg {
             Message::FromClient(msg) => {
                 if self.state.add(BTreeSet::from_iter(vec![msg.item])) {
-                    self.broadcast_state();
+                    self.broadcast_state().await;
                 }
             }
             Message::FromServer(msg) => {
                 if self.state.merge(&msg.state) {
-                    self.broadcast_state();
+                    self.broadcast_state().await;
                 }
             }
             Message::Terminate => {
@@ -198,7 +196,7 @@ impl Server {
     }
 
     /// Broadcast current state to all other nodes in the network.
-    fn broadcast_state(&mut self) {
+    async fn broadcast_state(&mut self) {
         let msg = Message::FromServer(ServerMessage {
             state: self.state.clone(),
         });
@@ -209,94 +207,94 @@ impl Server {
                         serde_json::to_string(&msg).unwrap().as_bytes(),
                         self.config.server_addrs[i],
                     )
+                    .await
                     .unwrap();
             }
         }
     }
 
     /// Main event loop.
-    pub fn run(&mut self) {
+    pub async fn run(&mut self) {
         self.running = true;
         while self.running {
             let mut buf = [0; 1500];
-            let (n, _) = self.socket.recv_from(&mut buf).unwrap();
+            let (n, _) = self.socket.recv_from(&mut buf).await.unwrap();
             let msg: Message = serde_json::from_str(&String::from_utf8_lossy(&buf[..n])).unwrap();
-            self.handle_msg(msg);
+            self.handle_msg(msg).await;
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::thread;
-    use std::thread::JoinHandle;
+    use rand::Rng;
     use std::time;
+    use tokio::task::JoinHandle;
 
     use super::*;
 
-    fn start_servers(n_server: usize) -> (Configuration, Vec<JoinHandle<BTreeSet<String>>>) {
+    async fn start_servers(n_server: usize) -> (Configuration, Vec<JoinHandle<BTreeSet<String>>>) {
         let mut config = Configuration {
             server_addrs: Vec::new(),
         };
-        let mut sockets = Vec::new();
-        for _ in 0..n_server {
-            let s = UdpSocket::bind("127.0.0.1:0").unwrap();
-            config.server_addrs.push(s.local_addr().unwrap());
-            sockets.push(s);
+        let port = 8000 + rand::thread_rng().gen_range(0..100) * 10;
+        for i in 0..n_server {
+            let addr = format!("127.0.0.1:{}", port + i).parse().unwrap();
+            config.server_addrs.push(addr);
         }
         let mut handles = Vec::new();
         for i in 0..n_server {
             let c = config.clone();
-            let s = sockets[i].try_clone().unwrap();
-            handles.push(std::thread::spawn(move || {
-                let mut server = Server::from_socket(&c, i, s);
-                server.run();
+            handles.push(tokio::spawn(async move {
+                let mut server = Server::new(&c, i).await;
+                server.run().await;
                 server.state.items
             }));
         }
         (config, handles)
     }
 
-    fn collect_states(handles: Vec<JoinHandle<BTreeSet<String>>>) -> Vec<BTreeSet<String>> {
-        handles
-            .into_iter()
-            .map(|h| h.join().unwrap())
-            .collect::<Vec<_>>()
+    async fn collect_states(handles: Vec<JoinHandle<BTreeSet<String>>>) -> Vec<BTreeSet<String>> {
+        let mut states = Vec::new();
+        for handle in handles {
+            states.push(handle.await.unwrap());
+        }
+        states
     }
 
-    fn terminate(config: &Configuration) {
-        let mut client = Client::new(config);
+    async fn terminate(config: &Configuration) {
+        let mut client = Client::new(config).await;
         for i in 0..config.server_addrs.len() {
-            client.terminate(i);
+            client.terminate(i).await;
         }
     }
 
-    #[test]
-    fn single_server() {
+    #[tokio::test]
+    async fn single_server() {
         // Start server
-        let (config, handles) = start_servers(1);
+        let (config, handles) = start_servers(1).await;
         // Run client
-        let mut client = Client::new(&config);
-        client.disseminate("hello");
+        let mut client = Client::new(&config).await;
+        client.disseminate("hello").await;
         // End test
-        thread::sleep(time::Duration::from_millis(100));
-        terminate(&config);
-        let states = collect_states(handles);
+        tokio::time::sleep(time::Duration::from_millis(100)).await;
+        terminate(&config).await;
+        let states = collect_states(handles).await;
         assert!(states[0].contains("hello"));
     }
 
-    #[test]
-    fn multi_servers() {
+    #[tokio::test]
+    async fn multi_servers() {
         // Start servers
-        let (config, handles) = start_servers(3);
+        let (config, handles) = start_servers(3).await;
         // Run client
-        let mut client = Client::new(&config);
-        client.disseminate("hello");
-        client.disseminate("world");
+        let mut client = Client::new(&config).await;
+        client.disseminate("hello").await;
+        client.disseminate("world").await;
         // End test
-        thread::sleep(time::Duration::from_millis(100));
-        terminate(&config);
-        let states = collect_states(handles);
+        tokio::time::sleep(time::Duration::from_millis(100)).await;
+        terminate(&config).await;
+        let states = collect_states(handles).await;
         assert!(states.iter().all(|s| s.contains("hello")));
         assert!(states.iter().all(|s| s.contains("world")));
         assert!(states.iter().all(|s| s.len() == 2));
