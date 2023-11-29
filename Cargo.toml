@@ -15,6 +15,10 @@ members = [
     "scripts/control",
     "scripts/relay",
     "scripts/neo-aws",
+    "znostr/zrelay",
+    "znostr/zagent",
+    "znostr/zclient",
+
 ]
 
 [profile.release]
