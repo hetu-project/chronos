@@ -14,6 +14,7 @@ use tokio::net::UdpSocket;
 enum Message {
     Request(Request),
     Reply(Reply),
+    Sync(Sync),
     Terminate,
 }
 
@@ -48,6 +49,12 @@ struct ReadReply {
 #[derive(Serialize, Deserialize, Debug)]
 struct WriteReply {
     success: bool,
+}
+
+#[derive(Serialize, Deserialize, Debug)]
+struct Sync {
+    key: String,
+    value: String,
 }
 
 /// System configuration. Contains a list of server addresses.
@@ -201,23 +208,50 @@ impl Server {
     async fn handle_message(&mut self, msg: Message, src: SocketAddr) {
         match msg {
             Message::Request(request) => {
-                let reply = match request {
-                    Request::Read(request) => Reply::ReadReply(ReadReply {
-                        value: self.state.read(&request.key),
-                    }),
-                    Request::Write(request) => {
-                        self.state.write(&request.key, &request.value);
-                        Reply::WriteReply(WriteReply { success: true })
-                    }
-                };
-                let msg = serde_json::to_string(&Message::Reply(reply)).unwrap();
-                self.socket.send_to(msg.as_bytes(), src).await.unwrap();
+                self.handle_request(request, src).await;
+            }
+            Message::Sync(sync) => {
+                self.handle_sync(sync).await;
             }
             Message::Terminate => {
                 self.running = false;
             }
             _ => {}
         }
+    }
+
+    /// Handle a client request.
+    async fn handle_request(&mut self, request: Request, src: SocketAddr) {
+        let reply = match request {
+            Request::Read(request) => Reply::ReadReply(ReadReply {
+                value: self.state.read(&request.key),
+            }),
+            Request::Write(request) => {
+                self.state.write(&request.key, &request.value);
+                // Synchronize state with other servers.
+                for i in 0..self.config.server_addrs.len() {
+                    if i != self.index {
+                        let sync = Sync {
+                            key: request.key.clone(),
+                            value: request.value.clone(),
+                        };
+                        let msg = serde_json::to_string(&Message::Sync(sync)).unwrap();
+                        self.socket
+                            .send_to(msg.as_bytes(), self.config.server_addrs[i])
+                            .await
+                            .unwrap();
+                    }
+                }
+                Reply::WriteReply(WriteReply { success: true })
+            }
+        };
+        let msg = serde_json::to_string(&Message::Reply(reply)).unwrap();
+        self.socket.send_to(msg.as_bytes(), src).await.unwrap();
+    }
+
+    /// Handle a sync message.
+    async fn handle_sync(&mut self, sync: Sync) {
+        self.state.write(&sync.key, &sync.value);
     }
 
     /// Start the storage node.
@@ -290,5 +324,23 @@ mod tests {
         assert_eq!(states[0].read("k1"), Some("v1".to_string()));
         assert_eq!(states[0].read("k2"), Some("v2".to_string()));
         assert_eq!(states[0].read("k3"), None);
+    }
+
+    #[tokio::test]
+    async fn sync() {
+        // Start server
+        let (config, handles) = start_servers(3).await;
+        // Run client
+        let mut client = Client::new(&config).await;
+        client.write("k1", "v1", Some(0)).await;
+        client.write("k2", "v2", Some(1)).await;
+        assert_eq!(client.read("k1", Some(2)).await, Some("v1".to_string()));
+        assert_eq!(client.read("k2", Some(2)).await, Some("v2".to_string()));
+        client.write("k1", "v3", Some(2)).await;
+        terminate(&config).await;
+        let mut states = collect_states(handles).await;
+        assert_eq!(states[0].read("k1"), Some("v3".to_string()));
+        assert_eq!(states[1].read("k1"), Some("v3".to_string()));
+        assert_eq!(states[2].read("k1"), Some("v3".to_string()));
     }
 }
