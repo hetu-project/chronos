@@ -8,6 +8,7 @@ members = [
     ".",
     "crates/accumulator",
     "crates/vlc",
+    "crates/cops",
     "znostr/zrelay",
     "znostr/zagent",
     "znostr/zclient",
