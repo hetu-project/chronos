@@ -129,10 +129,9 @@ impl Client {
     }
 }
 
-#[async_trait::async_trait]
 pub trait Workload {
-    async fn session(&mut self, invoke_handle: SubmitHandle<Vec<u8>, Vec<u8>>)
-        -> crate::Result<()>;
+    fn session(&mut self, invoke_handle: SubmitHandle<Vec<u8>, Vec<u8>>)
+        -> impl std::future::Future<Output = crate::Result<()>>;
 }
 
 pub async fn close_loop_session(

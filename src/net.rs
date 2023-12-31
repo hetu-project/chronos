@@ -9,7 +9,7 @@ use crate::{
 };
 
 #[derive(Debug, Clone)]
-pub struct UdpSocket(Arc<tokio::net::UdpSocket>);
+pub struct UdpSocket(pub Arc<tokio::net::UdpSocket>);
 
 impl UdpSocket {
     pub async fn bind(addr: Addr) -> crate::Result<Self> {
@@ -37,32 +37,9 @@ impl UdpSocket {
     }
 }
 
-#[derive(Debug)]
-pub struct UdpTransport<M>(Arc<tokio::net::UdpSocket>, std::marker::PhantomData<M>);
-
-impl<M> From<UdpSocket> for UdpTransport<M> {
-    fn from(UdpSocket(socket): UdpSocket) -> Self {
-        Self(socket, Default::default())
-    }
-}
-
-impl UdpSocket {
-    pub fn into_transport<M>(self) -> UdpTransport<M> {
-        self.into()
-    }
-}
-
-impl<M> Clone for UdpTransport<M> {
-    fn clone(&self) -> Self {
-        Self(self.0.clone(), Default::default())
-    }
-}
-
-#[async_trait::async_trait]
-impl<M, N> Transport<M> for UdpTransport<N>
+impl<M> Transport<M> for UdpSocket
 where
-    M: Into<N> + Send + 'static,
-    N: BorshSerialize + Send + Sync + 'static,
+    M: BorshSerialize,
 {
     fn addr(&self) -> Addr {
         Addr::Socket(self.0.local_addr().expect("retrievable local address"))
@@ -75,7 +52,7 @@ where
         let Addr::Socket(destination) = destination else {
             crate::bail!("unsupported destination kind {destination:?}")
         };
-        let buf = borsh::to_vec(&message.into())?;
+        let buf = borsh::to_vec(&message)?;
         self.0.send_to(&buf, destination).await?;
         Ok(())
     }
@@ -88,7 +65,7 @@ where
     where
         M: Message,
     {
-        let buf = borsh::to_vec(&message.into())?;
+        let buf = borsh::to_vec(&message)?;
         for destination in destinations {
             let Addr::Socket(destination) = destination else {
                 crate::bail!("unsupported destination kind {destination:?}")

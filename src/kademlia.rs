@@ -29,6 +29,10 @@ fn distance(id: &PeerId, target: &Location) -> U256 {
     U256::from_le_bytes(*id) ^ U256::from_le_bytes(*target)
 }
 
+fn distance_from(id: &PeerId, distance: U256) -> Location {
+    (U256::from_le_bytes(*id) ^ distance).to_le_bytes()
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, BorshSerialize, BorshDeserialize)]
 pub enum Message {
     FindPeer(Packet),
@@ -91,10 +95,38 @@ impl PeerRecord {
     }
 }
 
+impl TryFrom<kademlia_control_messages::Peer> for PeerRecord {
+    type Error = crate::Error;
+
+    fn try_from(value: kademlia_control_messages::Peer) -> Result<Self, Self::Error> {
+        Ok(Self {
+            id: value.id,
+            verifier: Verifier::from(secp256k1::PublicKey::from_slice(&value.key)?),
+            addr: Addr::Socket(value.addr),
+        })
+    }
+}
+
+impl From<PeerRecord> for kademlia_control_messages::Peer {
+    fn from(value: PeerRecord) -> Self {
+        let Addr::Socket(addr) = value.addr else {
+            unimplemented!()
+        };
+        Self {
+            id: value.id,
+            key: value.verifier.0.serialize().into(),
+            addr,
+        }
+    }
+}
+
+const MAX_CONCURRENCY: usize = 3;
+const BUCKET_SIZE: usize = 20;
+
 #[derive(Debug)]
 pub struct Peer {
     pub verifier: Verifier,
-    pub signer: Arc<Signer>,
+    pub signer: Signer,
     pub spawner: BackgroundSpawner,
 }
 
@@ -126,7 +158,7 @@ async fn find_session(
     for ((id, addr), handle) in closest
         .iter()
         .filter(|record| !contacted.contains(&record.id))
-        .take(3)
+        .take(MAX_CONCURRENCY)
         .map(|record| (record.id, record.addr.clone()))
         .zip(repeat(handle.clone()))
     {
@@ -137,6 +169,7 @@ async fn find_session(
         contacting.insert(id);
         destinations.push(addr)
     }
+    assert!(!destinations.is_empty());
     // due to the nature of asynchronous spawning above, there's chance that message has been
     // broadcast here, replies has been received, verified and dropped by main session (see below),
     // and `handle.submit` finally submitted
@@ -158,12 +191,12 @@ async fn find_session(
                 if contacted.contains(&record.id) || contacting.contains(&record.id) {
                     continue;
                 }
-                let index = closest
-                    .binary_search_by_key(&distance(&record.id, &target), |record| {
-                        distance(&record.id, &target)
-                    })
-                    .unwrap_err();
-                closest.insert(index, record)
+                match closest.binary_search_by_key(&distance(&record.id, &target), |record| {
+                    distance(&record.id, &target)
+                }) {
+                    Ok(index) => assert_eq!(closest[index].verifier, record.verifier),
+                    Err(index) => closest.insert(index, record),
+                }
             }
         } else {
             let index = closest
@@ -195,10 +228,13 @@ async fn find_session(
         {
             break;
         }
-        if let Some(record) = closest
-            .iter()
-            .find(|record| !contacted.contains(&record.id) && !contacting.contains(&record.id))
-        {
+        while contacting.len() < MAX_CONCURRENCY {
+            let Some(record) = closest
+                .iter()
+                .find(|record| !contacted.contains(&record.id) && !contacting.contains(&record.id))
+            else {
+                break;
+            };
             let id = record.id;
             let handle = handle.clone();
             submit_sessions.spawn(async move {
@@ -209,8 +245,10 @@ async fn find_session(
             transport
                 .send_to(record.addr.clone(), find_peer.clone())
                 .await?
-        };
+        }
+        assert!(!contacting.is_empty())
     }
+    drop(event);
     while let Some(result) = submit_sessions.join_next().await {
         result?;
     }
@@ -233,7 +271,7 @@ impl Buckets {
     pub fn new(center: PeerRecord) -> Self {
         Self {
             center,
-            distances: vec![Default::default(); 255],
+            distances: vec![Default::default(); U256::BITS as _],
         }
     }
 
@@ -253,13 +291,13 @@ impl Buckets {
         {
             bucket.records.remove(bucket_index);
         }
-        if bucket.records.len() < 20 {
+        if bucket.records.len() < BUCKET_SIZE {
             bucket.records.push(record);
             return;
         }
 
         // repeat on cached entries, only shifting on a full cache
-        // this is surprisingly duplicated
+        // this is surprisingly duplicated code to the above
         if let Some(bucket_index) = bucket
             .cached_records
             .iter()
@@ -267,7 +305,7 @@ impl Buckets {
         {
             bucket.cached_records.remove(bucket_index);
         }
-        if bucket.cached_records.len() == 20 {
+        if bucket.cached_records.len() == BUCKET_SIZE {
             bucket.cached_records.remove(0);
         }
         bucket.cached_records.push(record)
@@ -293,14 +331,25 @@ impl Buckets {
     fn find_closest(&self, target: &Location, count: usize) -> Vec<PeerRecord> {
         let mut records = Vec::new();
         let index = self.index(target);
-        for index in (index..U256::BITS as _).chain((0..index).rev()) {
+        let center_distance = distance(&self.center.id, target);
+        // look up order derived from libp2p::kad, personally i don't understand why this works
+        // anyway the result is asserted before returning
+        // notice that bucket index here is reversed to libp2p's, i.e. libp2p_to_this(i) = 255 - i
+        for index in (index..U256::BITS as _)
+            .filter(|i| center_distance >> (U256::BITS - 1 - *i as u32) & 1 == 1)
+            .chain(
+                (0..U256::BITS as _)
+                    .rev()
+                    .filter(|i| center_distance >> (U256::BITS - 1 - *i as u32) & 1 == 0),
+            )
+        {
             let mut index_records = self.distances[index].records.clone();
-            index_records.sort_unstable_by_key(|record| distance(&record.id, target));
             // ensure center peer is included if it is indeed close enough
             // can it be more elegant?
             if index == U256::BITS as usize - 1 {
                 index_records.push(self.center.clone())
             }
+            index_records.sort_unstable_by_key(|record| distance(&record.id, target));
             records.extend(index_records.into_iter().take(count - records.len()));
             assert!(records.len() <= count);
             if records.len() == count {
@@ -316,9 +365,9 @@ impl Buckets {
 
 pub async fn session(
     peer: Arc<Peer>,
-    mut buckets: Buckets,
+    buckets: &mut Buckets,
     mut subscribe_source: SubscribeSource<(Location, usize), Vec<PeerRecord>>,
-    mut message_source: EventSource<(Addr, Message)>,
+    message_source: &mut EventSource<(Addr, Message)>,
     transport: impl Transport<Message>,
 ) -> crate::Result<()> {
     let mut verify_find_peer_sessions = JoinSet::new();
@@ -329,15 +378,14 @@ pub async fn session(
     let (timeout_event, mut timeout_source) = event_channel();
 
     loop {
-        type Subscribe = ((Location, usize), EventSender<Vec<PeerRecord>>);
         enum Select {
-            Subscribe(Subscribe),
+            Subscribe(((Location, usize), EventSender<Vec<PeerRecord>>)),
             Message((Addr, Message)),
             VerifiedFindPeer(crate::Result<(Addr, FindPeer)>),
             VerifiedFindPeerOk(crate::Result<(Addr, FindPeerOk)>),
             Submit(((Location, PeerId), PromiseSender<FindPeerOk>)),
             JoinFindSession(()),
-            Timeout(PeerId),
+            Timeout((Location, PeerId)),
             Stop,
         }
         let select = async {
@@ -357,29 +405,35 @@ pub async fn session(
             submit = submit_source.next() => Select::Submit(submit?),
             timeout = timeout_source.next() => Select::Timeout(timeout?),
         } {
-            Select::Stop => break Ok(()),
+            Select::Stop => break,
             Select::JoinFindSession(()) => {}
             Select::Subscribe(((target, count), event)) => {
                 find_sessions.spawn(find_session(
                     peer.clone(),
                     target,
                     count,
-                    buckets.find_closest(&target, count),
+                    // minimum count is 2 to prevent returning single record which is this peer
+                    buckets.find_closest(&target, count.max(MAX_CONCURRENCY + 1)),
                     submit_handle.clone(),
                     event,
                     transport.clone(),
                 ));
             }
             Select::Submit(((target, id), result)) => {
-                let (find_peer_ok, promise_find_peer_ok) = promise_channel();
-                find_peer_ok_events.insert((target, id), find_peer_ok);
+                let (message, promise_message) = promise_channel();
+                let evicted = find_peer_ok_events.insert((target, id), message);
+                assert!(
+                    evicted.is_none(),
+                    "concurrent contactinng peer {} for target {}",
+                    hex_string(&id),
+                    hex_string(&target)
+                );
                 let timeout_event = timeout_event.clone();
                 peer.spawner.spawn(async move {
-                    let Ok(message) = timeout(Duration::from_secs(1), promise_find_peer_ok).await
-                    else {
-                        return timeout_event.send(target);
-                    };
-                    result.resolve(message?)
+                    match timeout(Duration::from_secs(1), promise_message).await {
+                        Ok(message) => result.resolve(message?),
+                        Err(_) => timeout_event.send((target, id)),
+                    }
                 });
             }
             Select::Message((remote, Message::FindPeer(message))) => {
@@ -418,7 +472,7 @@ pub async fn session(
                     verifier: peer.verifier,
                     instant: SystemTime(std::time::SystemTime::now()),
                 };
-                let signer = peer.signer.clone();
+                let signer = peer.signer;
                 let transport = transport.clone();
                 peer.spawner.spawn(async move {
                     transport
@@ -444,9 +498,95 @@ pub async fn session(
                     find_peer_ok.resolve(message)?
                 }
             }
-            Select::Timeout(id) => {
+            Select::Timeout((target, id)) => {
+                // println!("timeout target {target:02x?} id {id:02x?}");
+                find_peer_ok_events.remove(&(target, id)).unwrap();
                 buckets.remove(&id);
             }
         }
+    }
+    assert!(find_peer_ok_events.is_empty());
+    Ok(())
+}
+
+pub async fn bootstrap_session(
+    peer: Arc<Peer>,
+    buckets: &mut Buckets,
+    message_source: &mut EventSource<(Addr, Message)>,
+    transport: impl Transport<Message>,
+) -> crate::Result<()> {
+    let peer_id = peer_id(&peer.verifier)?;
+    let (handle, source) = event_channel();
+    let _event = handle.subscribe((peer_id, 20))?;
+    drop(handle);
+    session(
+        peer.clone(),
+        buckets,
+        source,
+        message_source,
+        transport.clone(),
+    )
+    .await?;
+    let (handle, source) = event_channel();
+    peer.spawner.spawn(async move {
+        let mut targets = HashSet::new();
+        let mut events = Vec::new();
+        for i in 0..U256::BITS - 1 {
+            let d = (U256::from_le_bytes(rand::random()) | U256::ONE << (U256::BITS - 1)) >> i;
+            let target = distance_from(&peer_id, d);
+            // assert_eq!(buckets.index(&target), i as _);
+            assert!(targets.insert(target));
+            // let mut event = handle.subscribe((target, 20))?;
+            // while event.option_next().await.is_some() {}
+            let event = handle.subscribe((target, 20))?;
+            events.push(event)
+        }
+        for mut event in events {
+            while event.option_next().await.is_some() {}
+        }
+        Ok(())
+    });
+    session(peer, buckets, source, message_source, transport).await
+}
+
+fn hex_string(id: &Location) -> String {
+    id.map(|n| format!("{n:02x}")).join("")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn distance_inversion() {
+        let id = rand::random::<PeerId>();
+        let d = U256::from_le_bytes(rand::random());
+        assert_eq!(distance(&id, &distance_from(&id, d)), d);
+    }
+
+    fn ordered_closest() -> crate::Result<()> {
+        let (secret_key, _) = secp256k1::generate_keypair(&mut rand::thread_rng());
+        let center = PeerRecord::new(&Signer::from(secret_key), Addr::Untyped(Default::default()))?;
+        let mut buckets = Buckets::new(center);
+        for _ in 0..1000 {
+            let (secret_key, _) = secp256k1::generate_keypair(&mut rand::thread_rng());
+            buckets.insert(PeerRecord::new(
+                &Signer::from(secret_key),
+                Addr::Untyped(Default::default()),
+            )?)
+        }
+        for _ in 0..1000 {
+            let records = buckets.find_closest(&rand::random(), 20);
+            assert_eq!(records.len(), 20)
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn ordered_closest_100() -> crate::Result<()> {
+        for _ in 0..100 {
+            ordered_closest()?
+        }
+        Ok(())
     }
 }

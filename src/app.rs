@@ -15,7 +15,6 @@ where
 
 pub struct NullWorkload;
 
-#[async_trait::async_trait]
 impl Workload for NullWorkload {
     async fn session(
         &mut self,

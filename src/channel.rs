@@ -1,12 +1,26 @@
+use std::fmt::Display;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Error {
+    SourceClosed,
+    SenderClosed,
+    PromiseClosed,
+}
+
+impl Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{self:?}")
+    }
+}
+
+impl std::error::Error for Error {}
+
 #[derive(Debug)]
 pub struct EventSource<M>(pub tokio::sync::mpsc::UnboundedReceiver<M>);
 
 impl<M> EventSource<M> {
     pub async fn next(&mut self) -> crate::Result<M> {
-        self.0
-            .recv()
-            .await
-            .ok_or(crate::err!("unexpected source closing"))
+        self.0.recv().await.ok_or(Error::SourceClosed.into())
     }
 
     pub async fn option_next(&mut self) -> Option<M> {
@@ -25,9 +39,7 @@ impl<M> Clone for EventSender<M> {
 
 impl<M> EventSender<M> {
     pub fn send(&self, message: M) -> crate::Result<()> {
-        self.0
-            .send(message)
-            .map_err(|_| crate::err!("unexpected event channel closing"))
+        self.0.send(message).map_err(|_| Error::SenderClosed.into())
     }
 }
 
@@ -51,9 +63,7 @@ pub fn promise_channel<T>() -> (PromiseSender<T>, PromiseSource<T>) {
 
 impl<T> PromiseSender<T> {
     pub fn resolve(self, value: T) -> crate::Result<()> {
-        self.0
-            .send(value)
-            .map_err(|_| crate::err!("return channel closed before submitted task finishes"))
+        self.0.send(value).map_err(|_| Error::PromiseClosed.into())
     }
 }
 

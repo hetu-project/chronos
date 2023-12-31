@@ -120,7 +120,7 @@ impl Signer {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Verifier(secp256k1::PublicKey);
+pub struct Verifier(pub secp256k1::PublicKey);
 
 impl From<secp256k1::PublicKey> for Verifier {
     fn from(value: secp256k1::PublicKey) -> Self {
