@@ -7,71 +7,81 @@
 use serde::{Deserialize, Serialize};
 use std::cmp;
 
-const N_SLOTS: usize = 32; // Currently, serde only supports array serialization up to 32 elements. TODO: Fix this after serde addresses the issue.
-const MAX_DEPTH: usize = 128;
-
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Clock {
-    value: [u128; N_SLOTS],
-    depth: usize,
+    id: u128,
+    value: u128,
+    ancestors: Vec<Clock>,
 }
 
 impl PartialOrd for Clock {
     fn partial_cmp(&self, other: &Clock) -> Option<cmp::Ordering> {
-        let mut ord = cmp::Ordering::Equal;
-        for i in 0..N_SLOTS {
-            if self.value[i] < other.value[i] {
-                if ord == cmp::Ordering::Equal {
-                    ord = cmp::Ordering::Less;
-                } else if ord == cmp::Ordering::Greater {
-                    return None;
+        if self.id == other.id {
+            return self.value.partial_cmp(&other.value);
+        } else {
+            // If current clock is <= to any of the other clock's ancestors,
+            // the clock is ordered before the other clock.
+            for anc in &other.ancestors {
+                match self.partial_cmp(anc) {
+                    Some(cmp::Ordering::Less) | Some(cmp::Ordering::Equal) => {
+                        return Some(cmp::Ordering::Less)
+                    }
+                    _ => (),
                 }
-            } else if self.value[i] > other.value[i] {
-                if ord == cmp::Ordering::Equal {
-                    ord = cmp::Ordering::Greater;
-                } else if ord == cmp::Ordering::Less {
-                    return None;
+            }
+            // Do the same check with the reverse direction
+            for anc in &self.ancestors {
+                match other.partial_cmp(anc) {
+                    Some(cmp::Ordering::Less) | Some(cmp::Ordering::Equal) => {
+                        return Some(cmp::Ordering::Greater)
+                    }
+                    _ => (),
                 }
             }
         }
-        Some(ord)
+        None
     }
 }
 
 impl Clock {
     /// Create a new clock.
-    pub fn new() -> Self {
+    pub fn new(id: u128) -> Self {
         Self {
-            value: [0; N_SLOTS],
-            depth: MAX_DEPTH,
+            id,
+            value: 0,
+            ancestors: Vec::new(),
         }
     }
 
-    /// Increment the clock at the given index. Returns false if the clock
-    /// is saturated.
-    pub fn inc(&mut self, index: usize) -> bool {
-        if self.depth > 0 {
-            self.depth -= 1;
-            self.value[index % N_SLOTS] |= 1 << self.depth;
-            true
-        } else {
-            false
+    /// Create a new clock that extends other clocks.
+    pub fn create(id: u128, ancestors: &Vec<Clock>) -> Self {
+        Self {
+            id,
+            value: 0,
+            ancestors: ancestors.clone(),
         }
+    }
+
+    /// Increment the clock
+    pub fn inc(&mut self) {
+        // If clock value overflows, panic
+        assert_ne!(self.value.checked_add(1), None);
+        self.value += 1;
     }
 
     /// Reset the clock.
     pub fn clear(&mut self) {
-        self.depth = MAX_DEPTH;
-        for i in 0..N_SLOTS {
-            self.value[i] = 0;
-        }
+        self.value = 0;
+        self.ancestors.clear();
     }
 
-    /// Merge the clock with another clock.
-    pub fn merge(&mut self, other: &Clock) {
-        self.depth = cmp::min(self.depth, other.depth);
-        for i in 0..N_SLOTS {
-            self.value[i] = self.value[i] | other.value[i];
+    /// Merge the clock with other clocks.
+    pub fn merge(&mut self, others: &Vec<Clock>) {
+        // If clock value overflows, panic
+        self.inc();
+        for clock in others {
+            // TODO: duplicate detection
+            self.ancestors.push(clock.clone());
         }
     }
 }
@@ -82,43 +92,45 @@ mod tests {
 
     #[test]
     fn clock_inc() {
-        let mut c = Clock::new();
-        assert!(c.inc(0));
-        assert!(c.inc(5));
-        assert_eq!(c.value[0], 1 << (MAX_DEPTH - 1));
-        assert_eq!(c.value[5], 1 << (MAX_DEPTH - 2));
+        let mut c = Clock::new(1);
+        c.inc();
+        c.inc();
+        assert_eq!(c.value, 2);
     }
 
     #[test]
     fn clock_cmp() {
-        let mut c1 = Clock::new();
-        let mut c2 = Clock::new();
+        let mut c1 = Clock::new(1);
+        let c2 = c1.clone();
+        let c3 = Clock::new(2);
 
-        assert!(c1.inc(0));
-        assert!(c2.inc(0));
         assert_eq!(c1, c2);
+        assert_eq!(c1.partial_cmp(&c3), None);
+        assert_eq!(c2.partial_cmp(&c3), None);
 
-        assert!(c1.inc(1));
-        assert!(c1 > c2);
-
-        assert!(c2.inc(2));
-        assert_eq!(c1.partial_cmp(&c2), None);
+        c1.inc();
+        assert_eq!(c2.partial_cmp(&c1), Some(cmp::Ordering::Less));
+        assert_eq!(c3.partial_cmp(&c1), None);
     }
 
     #[test]
     fn clock_merge() {
-        let mut c1 = Clock::new();
-        let mut c2 = Clock::new();
+        let mut c1 = Clock::new(1);
+        let mut c2 = Clock::new(2);
+        let mut c3 = Clock::new(3);
 
-        assert!(c1.inc(0));
-        assert!(c1.inc(1));
-        assert!(c2.inc(2));
-        assert!(c2.inc(3));
+        c1.inc();
+        c2.inc();
+        c3.inc();
+
         assert_eq!(c1.partial_cmp(&c2), None);
+        assert_eq!(c1.partial_cmp(&c3), None);
+        assert_eq!(c2.partial_cmp(&c3), None);
 
-        let mut c3 = c1.clone();
-        c3.merge(&c2);
-        assert!(c3 > c1);
-        assert!(c3 > c2);
+        c1.merge(&vec![c2.clone(), c3.clone()]);
+        assert_eq!(c2.partial_cmp(&c1), Some(cmp::Ordering::Less));
+        assert_eq!(c1.partial_cmp(&c2), Some(cmp::Ordering::Greater));
+        assert_eq!(c3.partial_cmp(&c1), Some(cmp::Ordering::Less));
+        assert_eq!(c1.partial_cmp(&c3), Some(cmp::Ordering::Greater));
     }
 }
