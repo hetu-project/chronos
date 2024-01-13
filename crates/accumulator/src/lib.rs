@@ -5,10 +5,10 @@
 //! new state to other nodes in the network. All nodes eventually converge to
 //! the same state, by merging received states into their own states.
 
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::collections::BTreeSet;
-use std::hash::{Hash, Hasher};
 use std::io::BufRead;
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
@@ -109,16 +109,12 @@ struct ServerState {
 impl ServerState {
     /// Create a new server state.
     fn new() -> Self {
+        let mut rng = rand::thread_rng();
+        let id: u128 = rng.gen();
         Self {
-            clock: Clock::new(),
+            clock: Clock::new(id),
             items: BTreeSet::new(),
         }
-    }
-
-    fn hash(&self) -> u64 {
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        self.items.hash(&mut hasher);
-        hasher.finish()
     }
 
     /// Add items into the state. Returns true if resulting in a new state.
@@ -127,7 +123,8 @@ impl ServerState {
             false
         } else {
             self.items.extend(items);
-            self.clock.inc(self.hash() as usize)
+            self.clock.inc();
+            true
         }
     }
 
@@ -144,9 +141,7 @@ impl ServerState {
                 false
             }
             None => {
-                // TODO: the two states have no causality, but result in the
-                // same items.
-                self.clock.merge(&other.clock);
+                self.clock.merge(&vec![&other.clock]);
                 self.add(other.items.clone())
             }
         }
