@@ -77,10 +77,18 @@ impl Clock {
 
     /// Merge the clock with other clocks.
     pub fn merge(&mut self, others: &Vec<&Clock>) {
-        self.inc();
         for &clock in others {
-            // TODO: duplicate detection
-            self.ancestors.push(clock.clone());
+            match self.clone().partial_cmp(clock) {
+                Some(cmp::Ordering::Less) => {
+                    self.value = clock.value;
+                    self.ancestors = clock.ancestors.clone();
+                }
+                Some(cmp::Ordering::Equal) => (),
+                Some(cmp::Ordering::Greater) => (),
+                None => {
+                    self.ancestors.push(clock.clone());
+                }
+            }
         }
     }
 }
