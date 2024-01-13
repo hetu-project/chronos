@@ -76,10 +76,9 @@ impl Clock {
     }
 
     /// Merge the clock with other clocks.
-    pub fn merge(&mut self, others: &Vec<Clock>) {
-        // If clock value overflows, panic
+    pub fn merge(&mut self, others: &Vec<&Clock>) {
         self.inc();
-        for clock in others {
+        for &clock in others {
             // TODO: duplicate detection
             self.ancestors.push(clock.clone());
         }
@@ -127,7 +126,7 @@ mod tests {
         assert_eq!(c1.partial_cmp(&c3), None);
         assert_eq!(c2.partial_cmp(&c3), None);
 
-        c1.merge(&vec![c2.clone(), c3.clone()]);
+        c1.merge(&vec![&c2, &c3]);
         assert_eq!(c2.partial_cmp(&c1), Some(cmp::Ordering::Less));
         assert_eq!(c1.partial_cmp(&c2), Some(cmp::Ordering::Greater));
         assert_eq!(c3.partial_cmp(&c1), Some(cmp::Ordering::Less));
