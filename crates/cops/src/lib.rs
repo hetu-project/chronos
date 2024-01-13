@@ -3,6 +3,7 @@
 //! The data store maintains a set of key-value pairs. It provides
 //! causal consistency to clients.
 
+use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -30,14 +31,14 @@ enum Request {
 #[derive(Serialize, Deserialize, Debug)]
 struct Read {
     key: String,
-    clock: Clock,
+    clock: Option<Clock>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 struct Write {
     key: String,
     value: String,
-    clock: Clock,
+    clock: Option<Clock>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -88,7 +89,7 @@ impl Configuration {
 pub struct Client {
     socket: UdpSocket,
     config: Configuration,
-    clock: Clock,
+    clock: Option<Clock>,
 }
 
 impl Client {
@@ -98,7 +99,7 @@ impl Client {
         Self {
             socket: s,
             config: config.clone(),
-            clock: Clock::new(),
+            clock: None,
         }
     }
 
@@ -141,6 +142,18 @@ impl Client {
         (hasher.finish() as usize) % self.config.server_addrs.len()
     }
 
+    /// Update local clock from received clock.
+    fn update_clock(&mut self, clock: &Clock) {
+        match self.clock {
+            Some(ref mut my_clock) => {
+                my_clock.merge(&vec![&clock]);
+            }
+            None => {
+                self.clock = Some(clock.clone());
+            }
+        }
+    }
+
     /// Invoke a request to COPS and wait for a reply. For read request, the
     /// read result is returned. Returns false if the server currently does not
     /// have all the causal dependencies.
@@ -161,7 +174,7 @@ impl Client {
                 Message::Reply(reply) => match reply {
                     Reply::ReadReply(reply) => match reply.clock {
                         Some(clock) => {
-                            self.clock.merge(&clock);
+                            self.update_clock(&clock);
                             return (true, reply.value);
                         }
                         None => {
@@ -170,7 +183,7 @@ impl Client {
                     },
                     Reply::WriteReply(reply) => match reply.clock {
                         Some(clock) => {
-                            self.clock.merge(&clock);
+                            self.update_clock(&clock);
                             return (true, None);
                         }
                         None => {
@@ -203,9 +216,11 @@ struct ServerState {
 impl ServerState {
     /// Create a new server state.
     fn new() -> Self {
+        let mut rng = rand::thread_rng();
+        let id: u128 = rng.gen();
         Self {
             store: HashMap::new(),
-            clock: Clock::new(),
+            clock: Clock::new(id),
         }
     }
 
@@ -224,12 +239,7 @@ impl ServerState {
             None => 1,
         };
         self.store.insert(key.to_string(), (value.to_string(), ver));
-        // Increment clock. Instead of using the hash of the entire state, we use
-        // the hash of the key-value pair.
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        let kv = format!("{}:{}", key, value);
-        kv.hash(&mut hasher);
-        self.clock.inc(hasher.finish() as usize);
+        self.clock.inc();
     }
 
     /// Merge another ServerState into the current state.
@@ -246,7 +256,7 @@ impl ServerState {
             }
             self.store.insert(key.to_string(), (value.clone(), *ver));
         }
-        self.clock.merge(&other.clock);
+        self.clock.merge(&vec![&other.clock]);
     }
 }
 
@@ -289,11 +299,14 @@ impl Server {
     }
 
     /// Check if local clock is not up-to-date.
-    fn is_behind(&self, clock: &Clock) -> bool {
-        match self.state.clock.partial_cmp(clock) {
-            Some(Ordering::Less) => true,
-            None => true,
-            _ => false,
+    fn is_behind(&self, clock: &Option<Clock>) -> bool {
+        match clock {
+            Some(clock) => match self.state.clock.partial_cmp(clock) {
+                Some(Ordering::Less) => true,
+                None => true,
+                _ => false,
+            },
+            None => false,
         }
     }
 
