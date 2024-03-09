@@ -5,7 +5,6 @@
 //! new state to other nodes in the network. All nodes eventually converge to
 //! the same state, by merging received states into their own states.
 
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::collections::BTreeSet;
@@ -103,16 +102,16 @@ impl Client {
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct ServerState {
     clock: Clock,
+    id: u128,
     items: BTreeSet<String>,
 }
 
 impl ServerState {
     /// Create a new server state.
-    fn new() -> Self {
-        let mut rng = rand::thread_rng();
-        let id: u128 = rng.gen();
+    fn new(id: u128) -> Self {
         Self {
-            clock: Clock::new(id),
+            clock: Clock::new(),
+            id,
             items: BTreeSet::new(),
         }
     }
@@ -123,7 +122,7 @@ impl ServerState {
             false
         } else {
             self.items.extend(items);
-            self.clock.inc();
+            self.clock.inc(self.id);
             true
         }
     }
@@ -166,7 +165,7 @@ impl Server {
             config: config.clone(),
             index,
             socket: s,
-            state: ServerState::new(),
+            state: ServerState::new(index.try_into().unwrap()),
             running: false,
         }
     }

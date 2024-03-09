@@ -6,88 +6,70 @@
 
 use serde::{Deserialize, Serialize};
 use std::cmp;
+use std::collections::HashMap;
 
 #[derive(Serialize, Deserialize, PartialEq, Clone, Debug)]
 pub struct Clock {
-    id: u128,
-    value: u128,
-    ancestors: Vec<Clock>,
+    values: HashMap<u128, u128>,
 }
 
 impl PartialOrd for Clock {
     fn partial_cmp(&self, other: &Clock) -> Option<cmp::Ordering> {
-        if self.id == other.id {
-            return self.value.partial_cmp(&other.value);
-        } else {
-            // If current clock is <= to any of the other clock's ancestors,
-            // the clock is ordered before the other clock.
-            for anc in &other.ancestors {
-                match self.partial_cmp(anc) {
-                    Some(cmp::Ordering::Less) | Some(cmp::Ordering::Equal) => {
-                        return Some(cmp::Ordering::Less)
-                    }
-                    _ => (),
-                }
-            }
-            // Do the same check with the reverse direction
-            for anc in &self.ancestors {
-                match other.partial_cmp(anc) {
-                    Some(cmp::Ordering::Less) | Some(cmp::Ordering::Equal) => {
-                        return Some(cmp::Ordering::Greater)
-                    }
-                    _ => (),
-                }
+        let mut less = false;
+        let mut greater = false;
+
+        for (id, value) in &self.values {
+            let other_value = other.values.get(id);
+            if other_value.is_none() || value > other_value.unwrap() {
+                greater = true;
+            } else if value < other_value.unwrap() {
+                less = true;
             }
         }
-        None
+
+        for (id, _) in &other.values {
+            if self.values.get(id).is_none() {
+                less = true;
+            }
+        }
+
+        if less && greater {
+            None
+        } else if less {
+            Some(cmp::Ordering::Less)
+        } else if greater {
+            Some(cmp::Ordering::Greater)
+        } else {
+            Some(cmp::Ordering::Equal)
+        }
     }
 }
 
 impl Clock {
     /// Create a new clock.
-    pub fn new(id: u128) -> Self {
+    pub fn new() -> Self {
         Self {
-            id,
-            value: 0,
-            ancestors: Vec::new(),
-        }
-    }
-
-    /// Create a new clock that extends other clocks.
-    pub fn create(id: u128, ancestors: &Vec<Clock>) -> Self {
-        Self {
-            id,
-            value: 0,
-            ancestors: ancestors.clone(),
+            values: HashMap::new(),
         }
     }
 
     /// Increment the clock
-    pub fn inc(&mut self) {
-        // If clock value overflows, panic
-        assert_ne!(self.value.checked_add(1), None);
-        self.value += 1;
+    pub fn inc(&mut self, id: u128) {
+        let value = self.values.entry(id).or_insert(0);
+        *value += 1;
     }
 
     /// Reset the clock.
     pub fn clear(&mut self) {
-        self.value = 0;
-        self.ancestors.clear();
+        self.values.clear();
     }
 
     /// Merge the clock with other clocks.
     pub fn merge(&mut self, others: &Vec<&Clock>) {
         for &clock in others {
-            match self.clone().partial_cmp(clock) {
-                Some(cmp::Ordering::Less) => {
-                    self.value = clock.value;
-                    self.ancestors = clock.ancestors.clone();
-                }
-                Some(cmp::Ordering::Equal) => (),
-                Some(cmp::Ordering::Greater) => (),
-                None => {
-                    self.ancestors.push(clock.clone());
-                }
+            for (id, value) in &clock.values {
+                let v = self.values.entry(*id).or_insert(0);
+                *v = std::cmp::max(*v, *value);
             }
         }
     }
@@ -99,36 +81,37 @@ mod tests {
 
     #[test]
     fn clock_inc() {
-        let mut c = Clock::new(1);
-        c.inc();
-        c.inc();
-        assert_eq!(c.value, 2);
+        let mut c = Clock::new();
+        c.inc(0);
+        c.inc(0);
+        assert_eq!(c.values.get(&0), Some(&2));
     }
 
     #[test]
     fn clock_cmp() {
-        let mut c1 = Clock::new(1);
+        let mut c1 = Clock::new();
+        c1.inc(0);
         let c2 = c1.clone();
-        let c3 = Clock::new(2);
+        let mut c3 = Clock::new();
+        c3.inc(1);
 
         assert_eq!(c1, c2);
         assert_eq!(c1.partial_cmp(&c3), None);
         assert_eq!(c2.partial_cmp(&c3), None);
 
-        c1.inc();
+        c1.inc(0);
         assert_eq!(c2.partial_cmp(&c1), Some(cmp::Ordering::Less));
         assert_eq!(c3.partial_cmp(&c1), None);
     }
 
     #[test]
     fn clock_merge() {
-        let mut c1 = Clock::new(1);
-        let mut c2 = Clock::new(2);
-        let mut c3 = Clock::new(3);
-
-        c1.inc();
-        c2.inc();
-        c3.inc();
+        let mut c1 = Clock::new();
+        c1.inc(0);
+        let mut c2 = Clock::new();
+        c2.inc(1);
+        let mut c3 = Clock::new();
+        c3.inc(2);
 
         assert_eq!(c1.partial_cmp(&c2), None);
         assert_eq!(c1.partial_cmp(&c3), None);

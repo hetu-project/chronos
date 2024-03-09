@@ -3,7 +3,6 @@
 //! The data store maintains a set of key-value pairs. It provides
 //! causal consistency to clients.
 
-use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::cmp::Ordering;
 use std::collections::HashMap;
@@ -207,20 +206,22 @@ impl Client {
 }
 
 /// State of a COPS storage node.
+///
+/// Todo: use per-key clock
 #[derive(Serialize, Deserialize, Debug, Clone)]
 struct ServerState {
-    store: HashMap<String, (String, u32)>,
     clock: Clock,
+    id: u128,
+    store: HashMap<String, (String, u32)>,
 }
 
 impl ServerState {
     /// Create a new server state.
-    fn new() -> Self {
-        let mut rng = rand::thread_rng();
-        let id: u128 = rng.gen();
+    fn new(id: u128) -> Self {
         Self {
+            clock: Clock::new(),
+            id,
             store: HashMap::new(),
-            clock: Clock::new(id),
         }
     }
 
@@ -239,7 +240,7 @@ impl ServerState {
             None => 1,
         };
         self.store.insert(key.to_string(), (value.to_string(), ver));
-        self.clock.inc();
+        self.clock.inc(self.id);
     }
 
     /// Merge another ServerState into the current state.
@@ -277,7 +278,7 @@ impl Server {
             config: config.clone(),
             index,
             socket: s,
-            state: ServerState::new(),
+            state: ServerState::new(index.try_into().unwrap()),
             running: false,
         }
     }
