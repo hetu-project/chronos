@@ -1,0 +1,31 @@
+name: build
+
+on:
+  push:
+    branches: [poc_1]
+  pull_request:
+    branches: [poc_1]
+
+  # 允许用于在 `Actions` 标签页中手动运行工作流
+  workflow_dispatch: {}
+
+jobs:
+  # 当前的工作流仅包含一个作业，作业 id 是 "build"
+  build:
+    # 作业名称
+    name: build rust action
+    # 执行作业所需的运行器 runner
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Build
+        run: cargo build --release
+
+      # 上传仓库里的文件到artifact
+      - name: artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: chronos
+          path: target/release/libtest.d
