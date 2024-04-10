@@ -1,7 +1,8 @@
-FROM ubuntu
+FROM rust:1.67
 
-WORKDIR /app
+WORKDIR /usr/src/myapp
+COPY . .
 
-RUN cargo build --release
+RUN cargo build
 
 CMD ["echo","-C","hello"]
