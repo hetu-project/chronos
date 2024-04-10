@@ -20,7 +20,7 @@ impl VectorClock {
         self.clock.insert(node_id.parse().unwrap(), version);
     }
 
-    fn has_conflict(&self, other: &VectorClock,) -> bool {
+    fn has_conflict(&self, other: &VectorClock) -> bool {
         let mut all_greater = true;
         let mut all_smaller = true;
 
@@ -55,4 +55,3 @@ mod tests {
         assert!(clock1.has_conflict(&clock2));
     }
 }
-
