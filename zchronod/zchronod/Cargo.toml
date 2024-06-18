@@ -1,35 +1,16 @@
 
 [package]
-name = "zchronod"
+name = "Zchronod"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# vlc = { version = "0.1.0", path = "../../crates/vlc" }
-# vlc-dag = { version = "0.1.0", path = "../../demos/vlc-dag" }
-protos = { path = "../../crates/protos" }
 tools = { version = "0.1.0", path = "../tools" }
 node_api = {version ="0.1.0", path = "../node_api" }
 db_sql ={version = "0.1.0", path = "../db_sql" }
 websocket = {version = "0.1.0", path = "../websocket" }
 structopt = "0.3.11"
-tracing = "0.1.40"
-tracing-subscriber = "0.3.18"
-prost = "0.12"
-prost-types = "0.12"
+tracing = "0.1.26"
 tokio = { version = "1.36.0", features = ["full"] }
-sea-orm = { version = "0.12.15", features = [ 
-    "sqlx-postgres", 
-    "sqlx-sqlite", 
-    # "runtime-tokio-native-tls",
-    "runtime-async-std-native-tls",
-    "macros" 
-] }
-serde = { version = "1", features = ["derive"] }
-serde_json = { version = "1" }
-url = "2.5.0"
-sha2 = "0.10.8"
-chrono = "0.4"
-hex = "0.4.3"

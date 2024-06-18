@@ -12,24 +12,11 @@ members = [
     "tools/replication-control",
     "tools/replication-control-messages",
     "tools/kademlia-control-messages",
-    "crates/protos",
     "zchronod/zchronod",
     "demos/test_conflict",
     "demos/coll-tx",
-    "demos/vlc-dag",
-    "tools/kademlia-control-messages", 
+    "demos/vlc-dag"
 ]
-
-[workspace.lints.clippy]
-nursery = "allow"
-cargo = "allow"
-pedantic = "allow"
-restriction = "allow"
-style = "deny"
-complexity = "deny"
-perf = "deny"
-correctness = "deny"
-dbg_macro = "deny"
 
 [profile.release]
 # debug = true

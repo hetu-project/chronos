@@ -13,9 +13,6 @@ pub enum ZchronodConfigError {
 
     #[error("Error while performing IO for the Zchronod: {0}")]
     IoError(#[from] std::io::Error),
-
-    #[error("Error nodeid illegal, must be hex format, and 64 bits")]
-    IllegalNodeId,
 }
 
 

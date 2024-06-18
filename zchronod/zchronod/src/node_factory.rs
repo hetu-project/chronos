@@ -1,11 +1,8 @@
 use std::sync::Arc;
 use node_api::config::ZchronodConfig;
 use node_api::error::ZchronodResult;
-use tokio::net::UdpSocket;
-use tokio::sync::RwLock;
-use tokio::task::JoinHandle;
-use crate::{handler, storage};
-use crate::zchronod::{ServerState, Zchronod, ZchronodArc};
+use crate::{storage, zchronod};
+use crate::zchronod::{Zchronod, ZchronodArc};
 
 #[derive(Default)]
 pub struct ZchronodFactory {
@@ -22,40 +19,22 @@ impl ZchronodFactory {
         self
     }
 
-    pub async fn create_zchronod(config: ZchronodConfig) -> ZchronodArc {
-        let cfg = Arc::new(config.clone());
-        let address = config.net.inner_p2p.clone();
-        let node_id = config.node.node_id.clone().unwrap_or(String::new());
-        let socket = UdpSocket::bind(address).await.unwrap();
-        let state = RwLock::new(ServerState::new(node_id, cfg.node.cache_msg_maximum));
-        let storage = storage::Storage::new(cfg.clone()).await;
-        let latest_clockinfo = storage.get_last_clock().await;
-        if let Ok(clockinfo) = latest_clockinfo {
-            state.write().await.clock_info = clockinfo;
-        }
-        let zchronod = Zchronod {
-            config: cfg,
-            socket,
-            storage,
-            state,
-        };
+    pub async fn produce(self) -> ZchronodResult<ZchronodArc> {
+        let storage = storage::Storage::new(self.config.clone());
 
-        Arc::new(zchronod)
-    }
+        /// p2p network pass send && recv
+        // let (p2p_send, p2p_recv) = match zchronod_p2p::spawn_zchronod_p2p().await;
 
-    pub async fn initialize_node(self) -> ZchronodResult<ZchronodArc> {
-        let arc_zchronod = ZchronodFactory::create_zchronod(self.config.clone()).await;
 
-        let mut join_handles: Vec<JoinHandle<()>> = Vec::new();
-        join_handles.push(tokio::spawn(handler::p2p_event_loop(arc_zchronod.clone())));
-        
+        /// create arc zchronod node
+        let arc_zchronod: ZchronodArc = Arc::new(Zchronod {});
+
+        tokio::task::spawn(zchronod::p2p_event_loop(arc_zchronod.clone()));
+
+
         // start client websocket
-        join_handles.push(tokio::spawn(handler::handle_incoming_ws_msg(self.config.net.ws_url)));
+        tokio::task::spawn(zchronod::handle_incoming_ws_msg());
 
-        for handle in join_handles {
-            handle.await.unwrap();
-        }
-
-        Ok(arc_zchronod)
+        todo!()
     }
 }

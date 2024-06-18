@@ -2,19 +2,18 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use once_cell::sync::Lazy;
-use crate::db_api::{DbKindT, DbWrite};
+use crate::api::{DbKindT, DbWrite};
 use crate::error::DatabaseResult;
-use tracing::error;
 
 pub struct RawDb {
     dbs: parking_lot::RwLock<HashMap<PathBuf, Box<dyn Any + Send + Sync>>>,
 }
 
 pub static RAW_DB_HANDLER: Lazy<RawDb> = Lazy::new(|| {
-    // get panic info if error occurs
+    /// get panic info if error occurs
     let orig_handler = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
-        error!("FATAL PANIC {:#?}", panic_info);
+        eprintln!("FATAL PANIC {:#?}", panic_info);
         orig_handler(panic_info);
     }));
 
