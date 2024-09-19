@@ -23,3 +23,8 @@ The crates folder of Chronos includes core functional code crates and utility li
 ## [crypto](./crypto/)
 
 - Some common crypto utilities, signatures, verify, and hash functions for elliptic curve.
+
+## [vrf](./vrf/)
+
+- This module contains implementations of a [verifiable random function](https://en.wikipedia.org/wiki/Verifiable_random_function), currently only ECVRF. 
+- VRFs can be used in the consensus protocol for leader election.

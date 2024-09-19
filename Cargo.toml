@@ -9,6 +9,7 @@ members = [
     "crates/accumulator",
     "crates/vlc",
     "crates/cops",
+    "crates/vrf",
     "crates/crypto",
     "demos/test_conflict",
     "demos/coll-tx",
