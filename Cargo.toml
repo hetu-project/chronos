@@ -9,9 +9,10 @@ members = [
     "crates/accumulator",
     "crates/vlc",
     "crates/cops",
+    "crates/crypto",
     "demos/test_conflict",
     "demos/coll-tx",
-    "demos/vlc-dag"
+    "demos/vlc-dag",
 ]
 
 [profile.release]
@@ -37,4 +38,3 @@ tokio-util = "0.7.10"
 [lib]
 name = "chronos"
 path = "src/lib.rs"
-

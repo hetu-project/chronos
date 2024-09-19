@@ -20,3 +20,6 @@ The crates folder of Chronos includes core functional code crates and utility li
 - The data store maintains a set of key-value pairs. 
 - It provides causal consistency to clients.
 
+## [crypto](./crypto/)
+
+- Some common crypto utilities, signatures, verify, and hash functions for elliptic curve.
