@@ -12,6 +12,7 @@ curve25519-dalek = "4.1.3"
 derive_deref = "1.0.2"
 anyhow = { version = "1.0.79", features = ["backtrace"] }
 failure = "0.1.3"
+thiserror = "1.0.63"
 ed25519-dalek = { version = "2.1.1", features = ["serde", "digest", "rand_core", "pem", "pkcs8"] }
 hex = "0.4.3"
 lazy_static = "1.3.0"

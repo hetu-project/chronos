@@ -9,7 +9,7 @@ pub type HandleFn = Arc<
     dyn Fn(
             Vec<u8>,
             Arc<NitroSecureModule>,
-            [Vec<u8>; 3],
+            Arc<[Vec<u8>; 3]>,
             UnboundedSender<Vec<u8>>,
         ) -> Pin<Box<dyn Future<Output = Result<(), anyhow::Error>> + Send>>
         + Send
@@ -40,13 +40,14 @@ impl NitroSecureModule {
             ..
         } = &mut request
         else {
-            unreachable!()
+            anyhow::bail!("user_data is None in Attestation request");
         };
+
         buf.extend(user_data);
         match aws_nitro_enclaves_nsm_api::driver::nsm_process_request(self.0, request) {
             aws_nitro_enclaves_nsm_api::api::Response::Attestation { document } => Ok(document),
             aws_nitro_enclaves_nsm_api::api::Response::Error(err) => anyhow::bail!("{err:?}"),
-            _ => anyhow::bail!("unimplemented"),
+            response => anyhow::bail!("Unexpected response: {:?}", response),
         }
     }
 
@@ -56,7 +57,7 @@ impl NitroSecureModule {
         {
             aws_nitro_enclaves_nsm_api::api::Response::DescribePCR { lock: _, data } => Ok(data),
             aws_nitro_enclaves_nsm_api::api::Response::Error(err) => anyhow::bail!("{err:?}"),
-            _ => anyhow::bail!("unimplemented"),
+            response => anyhow::bail!("Unexpected response: {:?}", response),
         }
     }
 
@@ -72,11 +73,11 @@ impl NitroSecureModule {
         };
 
         let nsm = std::sync::Arc::new(Self::new()?);
-        let pcrs = [
+        let pcrs = Arc::new([
             nsm.describe_pcr(0)?,
             nsm.describe_pcr(1)?,
             nsm.describe_pcr(2)?,
-        ];
+        ]);
 
         let socket_fd = socket(
             AddressFamily::Vsock,
@@ -133,6 +134,7 @@ impl NitroSecureModule {
                     });
                 }
             });
+            // this loop keeps one connect, and still works when meets some error in only connect.
             loop {
                 let result = tokio::select! {
                     result = &mut read_session, if !read_session.is_finished() => result,

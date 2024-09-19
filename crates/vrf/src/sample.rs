@@ -13,7 +13,7 @@ impl Sampler {
         }
     }
 
-    pub fn hex_to_biguint(&self, hex_str: &str) -> BigUint {
+    pub fn hex_to_biguint(hex_str: &str) -> BigUint {
         BigUint::from_str_radix(hex_str, 16).expect("Invalid hex string")
     }
     
@@ -38,7 +38,7 @@ mod tests {
     fn meets() {
         let sampler = Sampler::new(512);
         let vrf_output_hex = "a64c292ec45f6b252828aff9a02a0fe88d2fcc7f5fc61bb328f03f4c6c0657a9d26efb23b87647ff54f71cd51a6fa4c4e31661d8f72b41ff00ac4d2eec2ea7b3";
-        let vrf_output = sampler.hex_to_biguint(vrf_output_hex);
+        let vrf_output = Sampler::hex_to_biguint(vrf_output_hex);
 
         let target_probability = 0.1;
         let threshold = sampler.calculate_threshold(target_probability);

@@ -1,10 +1,11 @@
+use anyhow::Ok;
 use hex::FromHex;
 use rand::rngs::OsRng;
 use secp256k1::ecdsa::{RecoverableSignature, RecoveryId};
 use sha3::{Digest, Keccak256};
 
-pub fn public_key_to_address(public_key_hex: &str) -> String {
-    let public_key_bytes = hex::decode(public_key_hex).expect("Invalid hex string");
+pub fn public_key_to_address(public_key_hex: &str) -> anyhow::Result<String, anyhow::Error>  {
+    let public_key_bytes = hex::decode(public_key_hex)?;
 
     let mut hasher = Keccak256::new();
     hasher.update(&public_key_bytes[1..]);
@@ -16,7 +17,7 @@ pub fn public_key_to_address(public_key_hex: &str) -> String {
     let mut address = "0x".to_owned();
     address.push_str(&hex::encode(address_bytes));
 
-    address
+    Ok(address)
 }
 
 pub fn gen_secp256k1_keypair() -> (String, String) {
@@ -31,18 +32,19 @@ pub fn sign_message_recover_pk(
     secp: &secp256k1::Secp256k1<secp256k1::All>,
     secret_key: &secp256k1::SecretKey,
     message: &[u8],
-) -> RecoverableSignature {
-    let message = secp256k1::Message::from_digest_slice(message).expect("32-byte message");
-    secp.sign_ecdsa_recoverable(&message, &secret_key)
+) -> anyhow::Result<RecoverableSignature, anyhow::Error> {
+    let message = secp256k1::Message::from_digest_slice(message)?;
+    Ok(secp.sign_ecdsa_recoverable(&message, &secret_key))
 }
 
 pub fn recover_public_key(
     secp: &secp256k1::Secp256k1<secp256k1::All>,
     signature: &RecoverableSignature,
     message: &[u8],
-) -> Option<secp256k1::PublicKey> {
-    let message = secp256k1::Message::from_digest_slice(message).expect("32-byte message");
-    secp.recover_ecdsa(&message, &signature).ok()
+) -> anyhow::Result<secp256k1::PublicKey, anyhow::Error> {
+    let message = secp256k1::Message::from_digest_slice(message)?;
+    let pub_key = secp.recover_ecdsa(&message, &signature)?;
+    Ok(pub_key)
 }
 
 pub fn verify_secp256k1_recovery_pk(
@@ -69,16 +71,17 @@ pub fn verify_secp256k1_recovery_pk(
 pub fn verify_secp256k1_recovery_pk_bytes(
     signature_bytes: Vec<u8>,
     message_bytes: [u8; 32],
-) -> Option<secp256k1::PublicKey>  {
+) -> anyhow::Result<secp256k1::PublicKey, anyhow::Error> {
 
     let secp = secp256k1::Secp256k1::new();
 
-    let recovery_id = RecoveryId::from_i32(i32::from(signature_bytes[64])).unwrap();
+    let recovery_id = RecoveryId::from_i32(i32::from(signature_bytes[64]))?;
     let signatures_no_id = &signature_bytes[0..64];
 
-    let recoverable_signature = RecoverableSignature::from_compact(signatures_no_id, recovery_id).unwrap();
-    let message = secp256k1::Message::from_digest_slice(&message_bytes).unwrap();
-    secp.recover_ecdsa(&message, &recoverable_signature).ok()
+    let recoverable_signature = RecoverableSignature::from_compact(signatures_no_id, recovery_id)?;
+    let message = secp256k1::Message::from_digest_slice(&message_bytes)?;
+    let pub_key = secp.recover_ecdsa(&message, &recoverable_signature)?;
+    Ok(pub_key)
 }
 
 #[cfg(test)]
@@ -100,7 +103,7 @@ mod tests {
 
         let message = "Hello, Ethereum!".to_owned();
         let msg = message.sha256().to_fixed_bytes();
-        let signature_recover = sign_message_recover_pk(&secp, &secret_key, &msg);
+        let signature_recover = sign_message_recover_pk(&secp, &secret_key, &msg).unwrap();
         let serialized_signature = signature_recover.serialize_compact();
         println!("sig struct: {:?}", serialized_signature);
 

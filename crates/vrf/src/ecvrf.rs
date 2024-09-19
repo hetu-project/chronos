@@ -42,7 +42,6 @@
 //! let output: Output = (&proof).into();
 //! ```
 
-use failure::bail;
 use crate::traits::*;
 use core::convert::TryFrom;
 use curve25519_dalek::{
@@ -173,7 +172,7 @@ impl TryFrom<&[u8]> for VRFPublicKey {
 impl VRFPublicKey {
     /// Given a [`Proof`] and an input, returns whether or not the proof is valid for the input
     /// and public key
-    pub fn verify(&self, proof: &Proof, alpha: &[u8]) -> Result<(), failure::Error> {
+    pub fn verify(&self, proof: &Proof, alpha: &[u8]) -> Result<(), anyhow::Error> {
         let h_point = self.hash_to_curve(alpha);
         let pk_point = CompressedEdwardsY::from_slice(self.as_bytes())
             .unwrap()
@@ -189,7 +188,7 @@ impl VRFPublicKey {
         if proof.c == cprime {
             Ok(())
         } else {
-            bail!("The proof failed to verify for this public key")
+            anyhow::bail!("The proof failed to verify for this public key")
         }
     }
 

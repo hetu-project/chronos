@@ -3,6 +3,7 @@
 //! For examples on how to use these traits, see the implementations of the [`ed25519`] or
 //! [`bls12381`] modules.
 
+use std::fmt;
 use core::convert::{From, TryFrom};
 use proptest_derive::Arbitrary;
 use serde::{Deserialize, Serialize};
@@ -26,25 +27,25 @@ impl AsRef<[u8; 32]> for HashValue {
 /// (often, due to mangled material or curve equation failure for ECC) and
 /// validation errors (material recognizable but unacceptable for use,
 /// e.g. unsafe).
-#[derive(Clone, Debug, PartialEq, Eq, failure::Fail)]
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
 pub enum CryptoMaterialError {
     /// Key or signature material does not deserialize correctly.
-    #[fail(display = "DeserializationError")]
+    #[error("DeserializationError")]
     DeserializationError,
     /// Key or signature material deserializes, but is otherwise not valid.
-    #[fail(display = "ValidationError")]
+    #[error("ValidationError")]
     ValidationError,
     /// Key or signature material does not have the expected size.
-    #[fail(display = "WrongLengthError")]
+    #[error("WrongLengthError")]
     WrongLengthError,
     /// Part of the signature or key is not canonical resulting to malleability issues.
-    #[fail(display = "CanonicalRepresentationError")]
+    #[error("CanonicalRepresentationError")]
     CanonicalRepresentationError,
     /// A curve point (i.e., a public key) lies on a small group.
-    #[fail(display = "SmallSubgroupError")]
+    #[error("SmallSubgroupError")]
     SmallSubgroupError,
     /// A curve point (i.e., a public key) does not satisfy the curve equation.
-    #[fail(display = "PointNotOnCurveError")]
+    #[error("PointNotOnCurveError")]
     PointNotOnCurveError,
 }
 
@@ -89,7 +90,7 @@ pub trait ValidKeyStringExt: ValidKey {
             .and_then(|ref bytes| Self::try_from(bytes))
     }
     /// A function to encode into hex-string after serializing.
-    fn to_encoded_string(&self) -> Result<String, failure::Error> {
+    fn to_encoded_string(&self) -> Result<String, fmt::Error> {
         Ok(::hex::encode(&self.to_bytes()))
     }
 }
@@ -164,7 +165,7 @@ pub trait VerifyingKey:
         &self,
         message: &HashValue,
         signature: &Self::SignatureMaterial,
-    ) -> Result<(), failure::Error> {
+    ) -> Result<(), anyhow::Error> {
         signature.verify(message, self)
     }
 }
@@ -188,14 +189,14 @@ pub trait Signature:
     type VerifyingKeyMaterial: VerifyingKey<SignatureMaterial = Self>;
 
     /// The verification function.
-    fn verify(&self, message: &HashValue, public_key: &Self::VerifyingKeyMaterial) -> Result<(), failure::Error>;
+    fn verify(&self, message: &HashValue, public_key: &Self::VerifyingKeyMaterial) -> Result<(), anyhow::Error>;
 
     /// Native verification function.
     fn verify_arbitrary_msg(
         &self,
         message: &[u8],
         public_key: &Self::VerifyingKeyMaterial,
-    ) -> Result<(), failure::Error>;
+    ) -> Result<(), anyhow::Error>;
 
     /// Convert the signature into a byte representation.
     fn to_bytes(&self) -> Vec<u8>;

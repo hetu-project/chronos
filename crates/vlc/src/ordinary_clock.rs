@@ -304,7 +304,7 @@ mod tests {
             let mut count = 0;
             
             // sign once
-            let signature_recover = sign_message_recover_pk(&secp, &secret_key, &clock.sha256().to_fixed_bytes());
+            let signature_recover = sign_message_recover_pk(&secp, &secret_key, &clock.sha256().to_fixed_bytes()).unwrap();
 
             let start_time = Instant::now();
             let close_loops_session = async {
@@ -337,7 +337,7 @@ mod tests {
     
     #[tokio::test]
     #[ignore]
-    async fn stress_sig_verify_update() -> anyhow::Result<()> {
+    async fn stress_signature_verify_update() -> anyhow::Result<()> {
         use DigestHash as _;
 
         let secp = secp256k1::Secp256k1::new();
@@ -371,7 +371,7 @@ mod tests {
                     
                     // sign
                     let signature_recover = sign_message_recover_pk(&secp, &secret_key, &current_clock.sha256().to_fixed_bytes());
-                    signatures = Some(signature_recover);
+                    signatures = Some(signature_recover.unwrap());
                 }
                 anyhow::Ok(())
             };

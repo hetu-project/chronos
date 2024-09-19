@@ -101,7 +101,6 @@ fn gen_keypair_prove_and_verify() {
 fn test_expand_secret_key() {
     for tv in TESTVECTORS.iter() {
         let sk = from_string!(VRFPrivateKey, tv.SK);
-        println!("{:?}", sk);
         let esk = VRFExpandedPrivateKey::from(&sk);
         let pk = VRFPublicKey::try_from(&sk).unwrap();
         assert_eq!(tv.PK, to_string!(pk));
@@ -147,9 +146,6 @@ fn test_hash_points() {
 
         let s_scalar = k_scalar + c_scalar * sk.key;
         let s_scalar = ed25519_Scalar::from_bytes_mod_order(s_scalar.to_bytes());
-
-        let mut c_bytes = [0u8; 16];
-        c_bytes.copy_from_slice(&c_scalar.to_bytes()[..16]);
 
         let pi = Proof::new(gamma, c_scalar, s_scalar);
 

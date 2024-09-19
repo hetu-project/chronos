@@ -28,7 +28,7 @@ impl TryFrom<OrdinaryClock> for NitroEnclavesClock {
     type Error = anyhow::Error;
 
     fn try_from(value: OrdinaryClock) -> Result<Self, Self::Error> {
-        anyhow::ensure!(value.is_genesis());
+        anyhow::ensure!(value.is_genesis(), "OrdinaryClock is not in genesis state");
         Ok(Self {
             plain: value,
             document: Default::default(),
@@ -91,8 +91,6 @@ impl NitroEnclavesClock {
                     
                     let elapsed = start.elapsed();
                     timers.push(elapsed);
-                    // println!("bincode deserialize: {:?}", elapsed);
-                    // let _ = io::stdout().flush();
                     
                     // 2. verify clocks time
                     let start = Instant::now();
@@ -100,7 +98,8 @@ impl NitroEnclavesClock {
                         if let Some(document) = clock.verify()? {
                             for (i, pcr) in pcrs.iter().enumerate() {
                                 anyhow::ensure!(
-                                    document.pcrs.get(&i).map(|pcr| &**pcr) == Some(pcr)
+                                    document.pcrs.get(&i).map(|pcr| &**pcr) == Some(pcr),
+                                    "PCR value mismatch at index {}", i
                                 )
                             }
                         }
@@ -108,8 +107,6 @@ impl NitroEnclavesClock {
 
                     let elapsed = start.elapsed();
                     timers.push(elapsed);
-                    // println!("verify clock: {:?}", elapsed);
-                    // let _ = io::stdout().flush();
 
                     // 3. update clock time
                     let start = Instant::now();
@@ -119,12 +116,9 @@ impl NitroEnclavesClock {
                     
                     let elapsed = start.elapsed();
                     timers.push(elapsed);
-                    // println!("Update clock: {:?}", elapsed);
-                    // let _ = io::stdout().flush();
                     
                     // 4. gen clock with proof time
                     let start = Instant::now();
-                    // let key_lens = plain.0.len();
                     // relies on the fact that different clocks always hash into different
                     // digests, hopefully true
                     let user_data = plain.sha256().to_fixed_bytes().to_vec();
@@ -136,13 +130,9 @@ impl NitroEnclavesClock {
 
                     let elapsed = start.elapsed();
                     timers.push(elapsed);
-                    // println!("Gen clock proof: {:?}", elapsed);
-                    // let _ = io::stdout().flush();
 
                     let elapsed = full_start.elapsed();
                     timers.push(elapsed);
-                    // println!("Total once time: {:?}, key is {:?}", elapsed, key_lens);
-                    // let _ = io::stdout().flush();
                     
                     let buf = bincode::options().serialize(&(id, updated, timers))?;
                     write_sender.send(buf)?;

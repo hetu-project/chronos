@@ -4,7 +4,7 @@ This module verifiable logic clock is an implementation of Chronos's TEE backend
 
 ## Prepare environment
 
-Now, this repository use the aws nitro enclave as its trust execution environment.  
+Now, this repository uses the aws nitro enclave as its trust execution environment.  
 
 So, please create a cloud virtual instance and notice choose the `Amazon-2023 linux` as base image.  
 Because this base operator system is more friendly for using of the aws nitro enclave.
