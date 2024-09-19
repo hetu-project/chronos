@@ -5,19 +5,19 @@ pub struct VLCLLDb {
     env: Environment,
     merge_log: DbHandle,
     clock_infos: DbHandle,
-    cur_count: DbHandle,
+    _cur_count: DbHandle,
 }
 
 impl VLCLLDb {
     pub fn new(path: &str, mode: Option<u32>) -> Self {
-        let mut USER_DIR_MODE: u32 = 0o777;
+        let mut user_dir_mode: u32 = 0o777;
         if let Some(mode) = mode {
-            USER_DIR_MODE = mode;
+            user_dir_mode = mode;
         }
 
         let env = Environment::new()
             .max_dbs(5)
-            .open(path, USER_DIR_MODE)
+            .open(path, user_dir_mode)
             .expect("Failed to open the environment");
 
         let merge_log = env
@@ -32,7 +32,7 @@ impl VLCLLDb {
             .create_db("cur_count", DbFlags::empty())
             .expect("Failed to create the cur_count database");
 
-        VLCLLDb { env, merge_log, clock_infos, cur_count }
+        VLCLLDb { env, merge_log, clock_infos, _cur_count: cur_count }
     }
 
     pub(crate) fn add_clock_infos(&mut self, key: String, clock_info: ClockInfo) {

@@ -1,7 +1,7 @@
 //! A simple utxo structure for testing case.
 
 use std::io;
-use sha2::{Sha256, Digest};
+use sha2::Digest;
 
 /// SimpleUTXO input
 #[derive(Debug, Clone, PartialEq, Eq)]

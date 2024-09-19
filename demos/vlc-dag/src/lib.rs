@@ -10,19 +10,16 @@
 
 pub mod db_client;
 
-use clap::builder::Str;
+// use clap::builder::Str;
 use db_client::lldb_client::VLCLLDb;
 use serde::{Deserialize, Serialize};
 use std::time::UNIX_EPOCH;
 use std::{cmp, time::SystemTime};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap};
 use std::io::BufRead;
 use std::sync::{Arc, RwLock};
 use std::net::SocketAddr;
 use tokio::net::UdpSocket;
-
-use std::time;
-use tokio::{task::JoinHandle};
 use vlc::Clock;
 use lmdb_rs as lmdb;
 
@@ -222,7 +219,7 @@ impl ServerState {
         }
     }
 
-    fn handle_diff_req(&mut self, msg: DiffReq, db: Arc<RwLock<VLCLLDb>>) -> Option<ServerMessage> {
+    fn handle_diff_req(&mut self, msg: DiffReq, _db: Arc<RwLock<VLCLLDb>>) -> Option<ServerMessage> {
         // println!("Key-To-messageid: {:?}", self.clock_to_eventid);
         if msg.from_clock.count == 0 {
             let req = ServerMessage::DiffRsp(DiffRsp { diffs: self.items.clone(), from:self.clock_info.clone(), to: msg.from_clock.id });
@@ -239,7 +236,7 @@ impl ServerState {
         }
     }
 
-    fn handle_diff_rsp(&mut self, msg: DiffRsp, db: Arc<RwLock<VLCLLDb>>) -> bool {
+    fn handle_diff_rsp(&mut self, msg: DiffRsp, _db: Arc<RwLock<VLCLLDb>>) -> bool {
         match self.clock_info.clock.partial_cmp(&msg.from.clock) {
             Some(cmp::Ordering::Equal) => {},
             Some(cmp::Ordering::Greater) => {},
@@ -262,7 +259,7 @@ impl ServerState {
         false
     }
 
-    fn handle_active_sync(&mut self, msg: ActiveSync, db: Arc<RwLock<VLCLLDb>>) -> (Option<ServerMessage>, bool){
+    fn handle_active_sync(&mut self, msg: ActiveSync, _db: Arc<RwLock<VLCLLDb>>) -> (Option<ServerMessage>, bool){
         match self.clock_info.clock.partial_cmp(&msg.latest.clock) {
             Some(cmp::Ordering::Equal) => return (None, false),
             Some(cmp::Ordering::Greater) => return (None, false),
@@ -411,7 +408,6 @@ impl Server {
                             self.sinker_merge_log(&msg.latest).await;
                         }
                     }
-                    _ => { println!("[broadcast_state]: not support ServerMessage ")}
                 }
             }
             Message::Terminate => {
@@ -462,22 +458,22 @@ impl Server {
 
     /// direct send to someone node
     async fn direct_send(&mut self, fmsg: ServerMessage) {
-        let mut index = 0;
+        let mut _index = 0;
         let server_msg = Message::FromServer(fmsg.clone());
         match fmsg.clone() {
             ServerMessage::DiffReq(msg) => {
-                index = msg.to;
+                _index = msg.to;
             }
             ServerMessage::DiffRsp(msg) => {
-                index = msg.to;
+                _index = msg.to;
             }
             ServerMessage::ActiveSync(msg) => {
-                index = msg.to;
+                _index = msg.to;
             }
             _ => { return }
         }
 
-        let msg_index: usize = index.try_into().unwrap();
+        let msg_index: usize = _index.try_into().unwrap();
         if self.index != msg_index {
             self.socket
                 .send_to(
@@ -549,9 +545,10 @@ fn get_suffix<T: PartialEq + Clone>(vec: &[T], target: T) -> Option<Vec<T>> {
 
 #[cfg(test)]
 mod tests {
-    use rand::Rng;
-
     use super::*;
+    use rand::Rng;
+    use std::time;
+    use tokio::task::JoinHandle;
 
     async fn start_servers(n_server: usize) -> (Configuration, Vec<JoinHandle<Vec<String>>>) {
         let mut config = Configuration {

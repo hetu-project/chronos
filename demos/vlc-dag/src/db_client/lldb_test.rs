@@ -10,14 +10,14 @@ struct Commit {
     message: String,
 }
 
-struct Repository {
+struct _Repository {
     env: Environment,
     commits_db: DbHandle,
 }
 
-impl Repository {
+impl _Repository {
     
-    fn new(path: &str, db: &str) -> Self {
+    fn _new(path: &str, db: &str) -> Self {
         const USER_DIR: u32 = 0o777;
         let env = Environment::new()
             .max_dbs(5)
@@ -28,10 +28,10 @@ impl Repository {
             .create_db(db, DbFlags::empty())
             .expect("Failed to create the commits database");
 
-        Repository { env, commits_db }
+        _Repository { env, commits_db }
     }
  
-    fn add_commit(&mut self, commit: &Commit) {
+    fn _add_commit(&mut self, commit: &Commit) {
         // let db = self.env.get_default_db(DbFlags::empty()).unwrap();
         let txn = self.env.new_transaction().unwrap();
         let db = txn.bind(&self.commits_db);
@@ -50,28 +50,28 @@ mod tests {
 
     #[test]
     fn submit_to_repo() {
-        let mut repo = Repository::new("./db", "commit");
+        let mut repo = _Repository::_new("./db", "commit");
 
         let commit1 = Commit {
             id: "commit1".to_string(),
             parent_ids: HashSet::new(),
             message: "Initial commit".to_string(),
         };
-        repo.add_commit(&commit1);
+        repo._add_commit(&commit1);
 
         let commit2 = Commit {
             id: "commit2".to_string(),
             parent_ids: vec!["commit1".to_string()].into_iter().collect(),
             message: "Add feature X".to_string(),
         };
-        repo.add_commit(&commit2);
+        repo._add_commit(&commit2);
 
         let commit3 = Commit {
             id: "commit3".to_string(),
             parent_ids: vec!["commit1".to_string()].into_iter().collect(),
             message: "Add feature Y".to_string(),
         };
-        repo.add_commit(&commit3);
+        repo._add_commit(&commit3);
 
         let commit4 = Commit {
             id: "commit4".to_string(),
@@ -80,6 +80,6 @@ mod tests {
                 .collect(),
             message: "Merge feature X and Y".to_string(),
         };
-        repo.add_commit(&commit4);
+        repo._add_commit(&commit4);
     }
 }
