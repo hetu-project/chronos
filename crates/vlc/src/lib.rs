@@ -2,8 +2,9 @@
 //!
 //! This crate implements a verifiable logical clock construct. The clock
 //! can be used in a peer-to-peer network to order events. Any node in the
-//! network can verify the correctness of the clock.
-
+//! network can verify the correctness of the clock. And HashMap as its core 
+//! data structure.
+pub mod ordinary_clock;
 use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::collections::HashMap;

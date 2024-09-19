@@ -1,5 +1,5 @@
 [package]
-name = "coll-tx"
+name = "coll_tx"
 version = "0.1.0"
 edition = "2021"
 

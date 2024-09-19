@@ -11,9 +11,12 @@ members = [
     "crates/cops",
     "crates/vrf",
     "crates/crypto",
+    "crates/enclaves",
+    "crates/types",
     "demos/test_conflict",
-    "demos/coll-tx",
-    "demos/vlc-dag",
+    "demos/coll_tx",
+    "demos/vlc_dag",
+    "demos/tee_vlc",
 ]
 
 [profile.release]

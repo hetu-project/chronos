@@ -25,6 +25,16 @@ Randomness serves a vital role in nearly every aspect of current society，the i
 #### VLC & VRF Proposal
 Randomness serves a vital role in nearly every aspect of current society，the idea is to intergrate the ablility of logical clocks into random generator. To generate verifiable, fair random numbers, the proposal integrates VRF.
 
+## [tee_vlc](./tee_vlc/)
+
+This module verifiable logic clock is an implementation of Chronos's TEE backend. 
+
+And some features as follow:
+
+* Use the aws nitro enclave as its trust execution environment.
+* Support functions test and press test cases.
+
+
 ## [Test-Conflict](./test_conflict/)
 
 This use case domo is designed to detect software version conflict by applied vector clock.
