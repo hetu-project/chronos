@@ -129,6 +129,9 @@ impl Clock {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use bincode::Options;
+    use sha2::Sha256;
+    use sha2::Digest;
 
     #[test]
     fn clock_inc() {
@@ -173,5 +176,58 @@ mod tests {
         assert_eq!(c1.partial_cmp(&c2), Some(cmp::Ordering::Greater));
         assert_eq!(c3.partial_cmp(&c1), Some(cmp::Ordering::Less));
         assert_eq!(c1.partial_cmp(&c3), Some(cmp::Ordering::Greater));
+    }
+
+    #[test]
+    #[ignore]
+    fn clock_serialize() {
+        let mut c1 = Clock::new();
+        c1.inc(0);
+        c1.inc(1);
+        c1.inc(1);
+        c1.inc(2);
+        c1.inc(3);
+        let ser1 = bincode::options().serialize(&c1).unwrap();
+        
+        let mut c2 = Clock::new();
+        c2.inc(0);
+        c2.inc(1);
+        c2.inc(1);
+        c2.inc(2);
+        c2.inc(3);
+        let ser2 = bincode::options().serialize(&c2).unwrap();
+        
+        println!("{:?}, {:?}", c1, c2);
+        assert_eq!(c1, c2);    // ignore diff order, random
+        // not equal, no order
+        assert_ne!(ser1, ser2);
+    }
+
+    #[test]
+    #[ignore]
+    fn clock_sha256() {
+        let mut c1 = Clock::new();
+        c1.inc(0);
+        c1.inc(1);
+        c1.inc(1);
+        c1.inc(2);
+        let ser1 = bincode::options().serialize(&c1).unwrap();
+
+        let mut f_hasher_1 = Sha256::new();
+        f_hasher_1.update(ser1.clone());
+        let hash_1 = f_hasher_1.finalize();
+        
+        let unser1 = bincode::options().deserialize::<Clock>(&ser1).unwrap();
+        assert_eq!(c1, unser1);  // ignore diff order
+
+        // not equal
+        let ser2 = bincode::options().serialize(&unser1).unwrap();
+        assert_ne!(ser1, ser2);
+
+        // not equal
+        let mut f_hasher_2 = Sha256::new();
+        f_hasher_2.update(ser2);
+        let hash_2 = f_hasher_2.finalize();
+        assert_ne!(hash_1, hash_2);
     }
 }

@@ -25,7 +25,7 @@ Randomness serves a vital role in nearly every aspect of current society，the i
 #### VLC & VRF Proposal
 Randomness serves a vital role in nearly every aspect of current society，the idea is to intergrate the ablility of logical clocks into random generator. To generate verifiable, fair random numbers, the proposal integrates VRF.
 
-## [tee_vlc](./tee_vlc/)
+## [TEE_VLC](./tee_vlc/)
 
 This module verifiable logic clock is an implementation of Chronos's TEE backend. 
 
@@ -34,6 +34,14 @@ And some features as follow:
 * Use the aws nitro enclave as its trust execution environment.
 * Support functions test and press test cases.
 
+## [Test_VLC_Net](./test_vlc_net/)
+
+This module is designed for testing the VLC network. It combines VLC and gossip protocols to construct a multi-node network.
+
+Features include:
+* Configuration: It uses various commands to define details of the VLC network.
+* Demonstration: The Test_VLC_Net will collect useful data metrics during operation.
+* Streamlined workflow: This program maintains concise and core workflows for better testing.
 
 ## [Test-Conflict](./test_conflict/)
 

@@ -14,6 +14,7 @@ use tokio::{
 
 // tee id
 const CID: u32 = 16;
+const INITIAL_ZERO_VALUE: u64 = 0;
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
@@ -119,7 +120,7 @@ where
     let clock =
         C::try_from(OrdinaryClock((0..size).map(|i| (i as _, 0)).collect())).map_err(Into::into)?;
     let start = Instant::now();
-    update_sender.send(Update(clock, Default::default(), 0))?;
+    update_sender.send(Update(clock, Default::default(), INITIAL_ZERO_VALUE))?;
     let Some((_, clock, elapsed)) = update_ok_receiver.recv().await else {
         anyhow::bail!("missing UpdateOk")
     };
@@ -131,7 +132,7 @@ where
 
     for _ in 0..5 {
         sleep(Duration::from_millis(100)).await;
-        let update = Update(clock.clone(), vec![clock.clone(); num_merged], 0);
+        let update = Update(clock.clone(), vec![clock.clone(); num_merged], INITIAL_ZERO_VALUE);
         let start = Instant::now();
         update_sender.send(update)?;
         let Some((_, clock, elapsed_in_tee)) = update_ok_receiver.recv().await else {

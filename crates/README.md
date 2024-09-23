@@ -25,6 +25,11 @@ The crates folder of Chronos includes core functional code crates and utility li
 - This module provides some common utilities of TEE (Trusted Execution Environment) Enclaves. 
 - For examples: AWS nitro enclave, Mircosoft Azure, Intel SGX, etc.
 
+## [gossip](./gossip/)
+
+- This module provides the Gossip network toolkit for customizing a specified parameter. 
+- It implements a basic gossip network using libp2p. It currently supports discovery via mdns and bootnodes.
+
 ## [crypto](./crypto/)
 
 - Some common crypto utilities, signatures, verify, and hash functions for elliptic curve.

@@ -12,17 +12,34 @@ members = [
     "crates/vrf",
     "crates/crypto",
     "crates/enclaves",
+    "crates/gossip",
     "crates/types",
     "demos/test_conflict",
     "demos/coll_tx",
     "demos/vlc_dag",
     "demos/tee_vlc",
+    "demos/test_vlc_net",
 ]
 
+[profile.dev]
+opt-level = 1
+debug = true
+
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
-# debug = true
+opt-level = "z"
+debug = true
+lto = true
 strip = true
 incremental = true
+
+[profile.bench]
+debug = true
+
+[profile.artifact]
+inherits = "release"
 
 [dependencies]
 anyhow = { version = "1.0.75", features = ["backtrace"] }
