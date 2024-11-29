@@ -8,6 +8,13 @@ The crates folder of Chronos includes core functional code crates and utility li
 - The clock can be used in a peer-to-peer network to order events. 
 - Any node in the network can verify the correctness of the clock.
 
+## [hlc](./hlc/)
+
+- This hybrid logical clock crate implements a hybrid logical clock (HLC) construct designed to combine physical and logical timestamps.
+- The clock can be used in distributed systems to efficiently order events while minimizing the reliance on synchronized physical clocks.
+- Each timestamp consists of a wall-clock time and a logical component, allowing for easy comparison and conflict resolution.
+- This crate is an implementation of the [Hybrid Logical Clock](http://www.cse.buffalo.edu/tech-reports/2014-04.pdf).
+
 ## [accumulator](./accumulator/)
 
 - A simple accumulator application.
