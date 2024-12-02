@@ -15,6 +15,17 @@ The crates folder of Chronos includes core functional code crates and utility li
 - Each timestamp consists of a wall-clock time and a logical component, allowing for easy comparison and conflict resolution.
 - This crate is an implementation of the [Hybrid Logical Clock](http://www.cse.buffalo.edu/tech-reports/2014-04.pdf).
 
+## [hvlc](./hvlc/)
+
+- This Hybrid Vector Logical Clock (HVLC) crate implements a hybrid vector clock structure that combines physical timestamps with vector clock properties.
+- HVLC uses a BTreeMap to store logical clock values for multiple nodes while maintaining a physical timestamp, enabling efficient tracking of causality and concurrent events in distributed systems.
+- Each clock instance contains:
+  - A mapping table (inner) that records logical clock values for each node ID
+  - A physical timestamp used to provide total ordering when logical clock comparison is insufficient
+- The implementation provides core functionalities like event ordering, clock merging, and base calculation, suitable for scenarios requiring distributed causality tracking.
+- Compared to regular vector clocks, HVLC offers better total ordering support through physical timestamps while maintaining the causal consistency properties of vector clocks. 
+- It can be used to as the [CRDTs](https://crdt.tech/)(Conflict-free Replicated Data Type) algorithm in distributed scenarios for providing total ordering.
+
 ## [accumulator](./accumulator/)
 
 - A simple accumulator application.

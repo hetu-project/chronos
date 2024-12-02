@@ -131,6 +131,11 @@ impl Server {
         system_infos.refresh_memory();
 
         let total_memory = system_infos.total_memory() as f64;
+        if total_memory == 0.0 {
+            error!("Failed to get total system memory");
+            return 100.0; // Assume worst case
+        }
+        
         let used_memory = system_infos.used_memory() as f64;
         (used_memory / total_memory) * 100.0
     }

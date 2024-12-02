@@ -9,6 +9,7 @@ members = [
     "crates/accumulator",
     "crates/vlc",
     "crates/hlc",
+    "crates/hvlc",
     "crates/cops",
     "crates/vrf",
     "crates/crypto",
@@ -19,7 +20,7 @@ members = [
     "demos/coll_tx",
     "demos/vlc_dag",
     "demos/tee_vlc",
-    "demos/test_vlc_net", 
+    "demos/test_vlc_net",
 ]
 
 [profile.dev]

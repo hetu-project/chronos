@@ -84,6 +84,26 @@ pub struct State<F> {
     now: F,
 }
 
+impl<F: FnMut() -> SystemTime> PartialEq for State<F> {
+    fn eq(&self, other: &Self) -> bool {
+        self.s == other.s
+    }
+}
+
+impl<F: FnMut() -> SystemTime> Eq for State<F> {}
+
+impl<F: FnMut() -> SystemTime> PartialOrd for State<F> {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        self.s.partial_cmp(&other.s)
+    }
+}
+
+impl<F: FnMut() -> SystemTime> Ord for State<F> {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.s.cmp(&other.s)
+    }
+}
+
 impl State<()> {
     // Creates a standard hybrid logical clock, using `std::time::SystemTime` as
     // supplier of the physical clock's wall time.
@@ -162,6 +182,15 @@ mod tests {
 
     fn hlts(s: i64, ns: u32, l: u64) -> HLTimespec {
         HLTimespec::new(s, ns, l)
+    }
+
+    #[test]
+    fn hlts_comparing() {
+        let mut hlc = State::new();
+        let hlc_1 = hlc.get_time();
+        let hlc_2 = hlc.get_time();
+        println!("hlc1 {:?}, \nhlc2 {:?}", hlc_1, hlc_2);
+        assert!(hlc_1 < hlc_2);
     }
 
     #[test]
